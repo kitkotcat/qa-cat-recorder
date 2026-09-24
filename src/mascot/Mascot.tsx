@@ -3,11 +3,18 @@ import "./mascot.css";
 
 type MascotState = "idle" | "blink" | "wash" | "play" | "walk" | "litter";
 
+type MascotPosition = {
+  x: number;
+  y: number;
+};
+
 type MascotProps = {
   enabled: boolean;
   reducedMotion: boolean;
   funMode: boolean;
   recording: boolean;
+  position: MascotPosition | null;
+  onPositionChange: (position: MascotPosition | null) => void;
 };
 
 const STANDARD_STATES: MascotState[] = ["blink", "wash", "play", "walk"];
@@ -52,9 +59,23 @@ export default function Mascot({
   reducedMotion,
   funMode,
   recording,
+  position,
+  onPositionChange,
 }: MascotProps) {
   const [state, setState] = useState<MascotState>("idle");
+  const [localPosition, setLocalPosition] =
+    useState<MascotPosition | null>(position);
+
   const timeoutRef = useRef<number | null>(null);
+  const dragRef = useRef<{
+    pointerId: number;
+    offsetX: number;
+    offsetY: number;
+  } | null>(null);
+
+  useEffect(() => {
+    setLocalPosition(position);
+  }, [position]);
 
   const label = useMemo(() => {
     if (state === "wash") return "QA Buddy умывается";
@@ -91,19 +112,84 @@ export default function Mascot({
 
     return () => {
       cancelled = true;
+
       if (timeoutRef.current !== null) {
         window.clearTimeout(timeoutRef.current);
       }
     };
   }, [enabled, reducedMotion, funMode, recording]);
 
+  const clampPosition = (x: number, y: number): MascotPosition => {
+    const width = 104;
+    const height = 76;
+
+    return {
+      x: Math.max(8, Math.min(window.innerWidth - width - 8, x)),
+      y: Math.max(8, Math.min(window.innerHeight - height - 8, y)),
+    };
+  };
+
+  const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+
+    dragRef.current = {
+      pointerId: event.pointerId,
+      offsetX: event.clientX - rect.left,
+      offsetY: event.clientY - rect.top,
+    };
+
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+
+    setLocalPosition(
+      clampPosition(
+        event.clientX - drag.offsetX,
+        event.clientY - drag.offsetY
+      )
+    );
+  };
+
+  const finishDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragRef.current || dragRef.current.pointerId !== event.pointerId) {
+      return;
+    }
+
+    dragRef.current = null;
+
+    if (localPosition) {
+      onPositionChange(localPosition);
+    }
+  };
+
   if (!enabled) return null;
+
+  const style = localPosition
+    ? {
+        left: localPosition.x,
+        top: localPosition.y,
+        right: "auto",
+        bottom: "auto",
+      }
+    : undefined;
 
   return (
     <div
       className={`pixel-mascot state-${state} ${reducedMotion ? "reduced" : ""}`}
       aria-label={label}
-      title={label}
+      title="QA Buddy — перетащи мышкой, double click вернёт на место"
+      style={style}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={finishDrag}
+      onPointerCancel={finishDrag}
+      onDoubleClick={() => {
+        setLocalPosition(null);
+        onPositionChange(null);
+      }}
     >
       <div className="pixel-stage">
         <div className="pixel-cat">
@@ -113,6 +199,12 @@ export default function Mascot({
             <i className="eye eye-left" />
             <i className="eye eye-right" />
             <i className="nose" />
+            <i className="whisker whisker-l1" />
+            <i className="whisker whisker-l2" />
+            <i className="whisker whisker-l3" />
+            <i className="whisker whisker-r1" />
+            <i className="whisker whisker-r2" />
+            <i className="whisker whisker-r3" />
           </span>
           <span className="body" />
           <span className="tail" />
@@ -121,6 +213,7 @@ export default function Mascot({
         </div>
 
         <div className="pixel-ball" aria-hidden="true" />
+
         <div className="pixel-litter" aria-hidden="true">
           <span className="litter-fill" />
         </div>

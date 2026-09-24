@@ -1,5 +1,6 @@
 type RecorderStatus = "idle" | "recording" | "paused" | "stopped";
 type RecorderLocale = "ru" | "en";
+type BuilderMode = "bug" | "testcase" | "checklist";
 
 type RecorderStep = {
   id: string;
@@ -37,6 +38,17 @@ type RecorderScreenshot = {
   url: string;
   timestamp: number;
   attached?: boolean;
+  stepId?: string | null;
+};
+
+type EnvironmentInfo = {
+  url: string;
+  domain: string;
+  browser: string;
+  os: string;
+  viewport: string;
+  language: string;
+  capturedAt: number | null;
 };
 
 type BugReportDraft = {
@@ -45,6 +57,36 @@ type BugReportDraft = {
   actualResult: string;
   expectedResult: string;
   environment: string;
+  severity: "Blocker" | "Critical" | "Major" | "Minor" | "Trivial";
+  priority: "High" | "Medium" | "Low";
+};
+
+type TestCaseDraft = {
+  title: string;
+  module: string;
+  preconditions: string;
+  testData: string;
+  steps: string[];
+  expectedResult: string;
+  priority: "High" | "Medium" | "Low";
+  caseType: "Positive" | "Negative" | "Edge";
+  tags: string;
+};
+
+type ChecklistItem = {
+  id: string;
+  text: string;
+  checked: boolean;
+};
+
+type ChecklistDraft = {
+  title: string;
+  items: ChecklistItem[];
+};
+
+type MascotPosition = {
+  x: number;
+  y: number;
 };
 
 type RecorderSettings = {
@@ -53,10 +95,11 @@ type RecorderSettings = {
   reducedMotion: boolean;
   funMode: boolean;
   slowRequestThresholdMs: number;
+  mascotPosition: MascotPosition | null;
 };
 
 type RecorderState = {
-  schemaVersion: 2;
+  schemaVersion: 3;
   status: RecorderStatus;
   sessionId: string | null;
   targetTabId: number | null;
@@ -68,6 +111,9 @@ type RecorderState = {
   networkEvents: RecorderNetworkEvent[];
   consoleEvents: RecorderConsoleEvent[];
   screenshots: RecorderScreenshot[];
+  environment: EnvironmentInfo;
   bugReport: BugReportDraft;
+  testCase: TestCaseDraft;
+  checklist: ChecklistDraft;
   settings: RecorderSettings;
 };

@@ -7,12 +7,23 @@
   const SENSITIVE_QUERY_KEY = /(token|auth|key|secret|password|session|code)/i;
   const requestStartedAt = new Map<string, number>();
 
+  const defaultEnvironment = (): EnvironmentInfo => ({
+    url: "",
+    domain: "",
+    browser: "",
+    os: "",
+    viewport: "",
+    language: "ru",
+    capturedAt: null,
+  });
+
   const defaultSettings = (): RecorderSettings => ({
     locale: "ru",
     mascotEnabled: true,
     reducedMotion: false,
     funMode: false,
     slowRequestThresholdMs: 2000,
+    mascotPosition: null,
   });
 
   const defaultBugReport = (): BugReportDraft => ({
@@ -21,10 +32,29 @@
     actualResult: "",
     expectedResult: "",
     environment: "",
+    severity: "Major",
+    priority: "Medium",
+  });
+
+  const defaultTestCase = (): TestCaseDraft => ({
+    title: "",
+    module: "",
+    preconditions: "",
+    testData: "",
+    steps: [],
+    expectedResult: "",
+    priority: "Medium",
+    caseType: "Positive",
+    tags: "",
+  });
+
+  const defaultChecklist = (): ChecklistDraft => ({
+    title: "",
+    items: [],
   });
 
   const defaultState = (): RecorderState => ({
-    schemaVersion: 2,
+    schemaVersion: 3,
     status: "idle",
     sessionId: null,
     targetTabId: null,
@@ -36,16 +66,20 @@
     networkEvents: [],
     consoleEvents: [],
     screenshots: [],
+    environment: defaultEnvironment(),
     bugReport: defaultBugReport(),
+    testCase: defaultTestCase(),
+    checklist: defaultChecklist(),
     settings: defaultSettings(),
   });
 
   function normalizeState(raw?: Partial<RecorderState>): RecorderState {
     const base = defaultState();
+
     return {
       ...base,
       ...raw,
-      schemaVersion: 2,
+      schemaVersion: 3,
       steps: (raw?.steps ?? []).map((step) => ({
         ...step,
         note: step.note ?? "",
@@ -56,9 +90,26 @@
       screenshots: (raw?.screenshots ?? []).map((item) => ({
         ...item,
         attached: item.attached ?? true,
+        stepId: item.stepId ?? null,
       })),
+      environment: { ...base.environment, ...(raw?.environment ?? {}) },
       bugReport: { ...base.bugReport, ...(raw?.bugReport ?? {}) },
-      settings: { ...base.settings, ...(raw?.settings ?? {}) },
+      testCase: {
+        ...base.testCase,
+        ...(raw?.testCase ?? {}),
+        steps: raw?.testCase?.steps ?? [],
+      },
+      checklist: {
+        ...base.checklist,
+        ...(raw?.checklist ?? {}),
+        items: raw?.checklist?.items ?? [],
+      },
+      settings: {
+        ...base.settings,
+        ...(raw?.settings ?? {}),
+        locale: "ru",
+        mascotPosition: raw?.settings?.mascotPosition ?? null,
+      },
       finishedAt: raw?.finishedAt ?? null,
     };
   }
@@ -76,24 +127,90 @@
     try {
       const url = new URL(rawUrl);
       url.hash = "";
+
       for (const key of Array.from(url.searchParams.keys())) {
         if (SENSITIVE_QUERY_KEY.test(key)) {
           url.searchParams.set(key, "[redacted]");
         }
       }
+
       return url.toString().slice(0, 1200);
     } catch {
       return rawUrl.slice(0, 1200);
     }
   }
 
-  function pageLabel(url: string, locale: RecorderLocale): string {
+  function browserFromUserAgent(userAgent: string): string {
+    const edge = userAgent.match(/Edg\/([\d.]+)/);
+    if (edge) return `Edge ${edge[1]}`;
+
+    const chrome = userAgent.match(/Chrome\/([\d.]+)/);
+    if (chrome) return `Chrome ${chrome[1]}`;
+
+    const firefox = userAgent.match(/Firefox\/([\d.]+)/);
+    if (firefox) return `Firefox ${firefox[1]}`;
+
+    const safari = userAgent.match(/Version\/([\d.]+).*Safari/);
+    if (safari) return `Safari ${safari[1]}`;
+
+    return "Не определён";
+  }
+
+  function osFromUserAgent(userAgent: string): string {
+    if (/Mac OS X/i.test(userAgent)) {
+      const version = userAgent.match(/Mac OS X ([\d_]+)/)?.[1]?.replaceAll("_", ".");
+      return version ? `macOS ${version}` : "macOS";
+    }
+
+    if (/Windows NT/i.test(userAgent)) return "Windows";
+    if (/Android/i.test(userAgent)) return "Android";
+    if (/Linux/i.test(userAgent)) return "Linux";
+    return "Не определена";
+  }
+
+  function environmentText(environment: EnvironmentInfo): string {
+    return [
+      `URL: ${environment.url || "—"}`,
+      `Browser: ${environment.browser || "—"}`,
+      `OS: ${environment.os || "—"}`,
+      `Viewport: ${environment.viewport || "—"}`,
+      `Locale: ${environment.language || "—"}`,
+    ].join("\n");
+  }
+
+  async function collectEnvironment(
+    tab: chrome.tabs.Tab
+  ): Promise<EnvironmentInfo> {
+    const userAgent = navigator.userAgent;
+
+    let domain = "";
+    try {
+      domain = tab.url ? new URL(tab.url).hostname : "";
+    } catch {
+      domain = "";
+    }
+
+    return {
+      url: safeUrl(tab.url ?? ""),
+      domain,
+      browser: browserFromUserAgent(userAgent),
+      os: osFromUserAgent(userAgent),
+      viewport:
+        typeof tab.width === "number" && typeof tab.height === "number"
+          ? `${tab.width}×${tab.height}`
+          : "—",
+      language: navigator.language || "ru",
+      capturedAt: Date.now(),
+    };
+  }
+
+  function pageLabel(url: string): string {
     try {
       const parsed = new URL(url);
       const target = `${parsed.hostname}${parsed.pathname === "/" ? "" : parsed.pathname}`;
-      return locale === "ru" ? `Открыть ${target}` : `Open ${target}`;
+      return `Открыть ${target}`;
     } catch {
-      return locale === "ru" ? "Открыть страницу" : "Open page";
+      return "Открыть страницу";
     }
   }
 
@@ -113,6 +230,58 @@
     };
   }
 
+  function checklistFromSteps(steps: RecorderStep[]): ChecklistItem[] {
+    return steps.map((step) => ({
+      id: crypto.randomUUID(),
+      text: step.label,
+      checked: false,
+    }));
+  }
+
+  function rebuildDraft(
+    state: RecorderState,
+    mode: BuilderMode
+  ): RecorderState {
+    const domain = state.environment.domain || "проверяемого функционала";
+    const stepLabels = state.steps.map((step) => step.label);
+
+    if (mode === "bug") {
+      state.bugReport = {
+        ...defaultBugReport(),
+        title: state.bugReport.title || "",
+        environment: environmentText(state.environment),
+      };
+    }
+
+    if (mode === "testcase") {
+      state.testCase = {
+        ...defaultTestCase(),
+        title: `Проверка ${domain}`,
+        module: domain,
+        steps: stepLabels,
+      };
+    }
+
+    if (mode === "checklist") {
+      state.checklist = {
+        title: `Чек-лист: ${domain}`,
+        items: checklistFromSteps(state.steps),
+      };
+    }
+
+    return state;
+  }
+
+  function resetDraft(
+    state: RecorderState,
+    mode: BuilderMode
+  ): RecorderState {
+    if (mode === "bug") state.bugReport = defaultBugReport();
+    if (mode === "testcase") state.testCase = defaultTestCase();
+    if (mode === "checklist") state.checklist = defaultChecklist();
+    return state;
+  }
+
   function contentState(state: RecorderState): RecorderState {
     return {
       ...state,
@@ -124,6 +293,7 @@
 
   function notifyTarget(state: RecorderState): void {
     if (state.targetTabId === null) return;
+
     chrome.tabs.sendMessage(
       state.targetTabId,
       { type: "STATE_UPDATED", state: contentState(state) },
@@ -136,26 +306,28 @@
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
     if (!tab?.id || !tab.url || !/^https?:/i.test(tab.url)) {
-      throw new Error(
-        previous.settings.locale === "ru"
-          ? "Открой обычную http/https страницу перед запуском записи."
-          : "Open a regular http/https page before starting the recorder."
-      );
+      throw new Error("Открой обычную http/https страницу перед запуском записи.");
     }
 
     const now = Date.now();
+    const environment = await collectEnvironment(tab);
+
     const state: RecorderState = {
       ...defaultState(),
       status: "recording",
       sessionId: crypto.randomUUID(),
       targetTabId: tab.id,
       startedAt: now,
-      settings: previous.settings,
+      settings: {
+        ...previous.settings,
+        locale: "ru",
+      },
+      environment,
       bugReport: {
         ...defaultBugReport(),
-        environment: navigator.userAgent,
+        environment: environmentText(environment),
       },
-      steps: [makeStep("page", pageLabel(tab.url, previous.settings.locale), tab.url)],
+      steps: [makeStep("page", pageLabel(tab.url), tab.url)],
     };
 
     await saveState(state);
@@ -186,9 +358,26 @@
 
     if (state.status === "recording" || state.status === "paused") {
       const now = Date.now();
-      if (state.status === "recording") state.pausedAt = now;
+
+      if (state.status === "recording") {
+        state.pausedAt = now;
+      }
+
       state.finishedAt = now;
       state.status = "stopped";
+
+      if (state.testCase.steps.length === 0) {
+        rebuildDraft(state, "testcase");
+      }
+
+      if (state.checklist.items.length === 0) {
+        rebuildDraft(state, "checklist");
+      }
+
+      if (!state.bugReport.environment) {
+        state.bugReport.environment = environmentText(state.environment);
+      }
+
       await saveState(state);
       notifyTarget(state);
     }
@@ -196,10 +385,15 @@
     return state;
   }
 
-  async function clearSession(): Promise<RecorderState> {
+  async function newSession(): Promise<RecorderState> {
     const previous = await loadState();
     const state = defaultState();
-    state.settings = previous.settings;
+
+    state.settings = {
+      ...previous.settings,
+      locale: "ru",
+    };
+
     await saveState(state);
     notifyTarget(state);
     return state;
@@ -245,9 +439,14 @@
     return state;
   }
 
-  async function addManualStep(message: { label?: string }): Promise<RecorderState> {
+  async function addManualStep(
+    message: { label?: string }
+  ): Promise<RecorderState> {
     const state = await loadState();
-    if (!state.sessionId || !message.label?.trim()) return state;
+
+    if (!state.sessionId || !message.label?.trim()) {
+      return state;
+    }
 
     let url = "";
     if (state.targetTabId !== null) {
@@ -270,7 +469,12 @@
   }
 
   async function updateStep(
-    message: { stepId?: string; note?: string; important?: boolean; delete?: boolean }
+    message: {
+      stepId?: string;
+      note?: string;
+      important?: boolean;
+      delete?: boolean;
+    }
   ): Promise<RecorderState> {
     const state = await loadState();
     if (!message.stepId) return state;
@@ -336,28 +540,17 @@
     const state = await loadState();
 
     if (state.status !== "recording" && state.status !== "paused") {
-      throw new Error(
-        state.settings.locale === "ru"
-          ? "Сначала запусти запись."
-          : "Start a recording session first."
-      );
+      throw new Error("Сначала запусти запись.");
     }
 
     if (state.targetTabId === null) {
-      throw new Error(
-        state.settings.locale === "ru"
-          ? "Тестируемая вкладка не найдена."
-          : "Recorded tab was not found."
-      );
+      throw new Error("Тестируемая вкладка не найдена.");
     }
 
     const tab = await chrome.tabs.get(state.targetTabId);
+
     if (!tab.active) {
-      throw new Error(
-        state.settings.locale === "ru"
-          ? "Вернись на тестируемую вкладку перед скриншотом."
-          : "Return to the recorded tab before taking a screenshot."
-      );
+      throw new Error("Вернись на тестируемую вкладку перед скриншотом.");
     }
 
     const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
@@ -373,6 +566,7 @@
         url: safeUrl(tab.url ?? ""),
         timestamp: Date.now(),
         attached: true,
+        stepId: state.steps.at(-1)?.id ?? null,
       },
     ].slice(-MAX_SCREENSHOTS);
 
@@ -381,7 +575,12 @@
   }
 
   async function updateScreenshot(
-    message: { screenshotId?: string; attached?: boolean; delete?: boolean }
+    message: {
+      screenshotId?: string;
+      attached?: boolean;
+      delete?: boolean;
+      stepId?: string | null;
+    }
   ): Promise<RecorderState> {
     const state = await loadState();
     if (!message.screenshotId) return state;
@@ -393,7 +592,14 @@
     } else {
       state.screenshots = state.screenshots.map((item) =>
         item.id === message.screenshotId
-          ? { ...item, attached: message.attached ?? item.attached }
+          ? {
+              ...item,
+              attached: message.attached ?? item.attached,
+              stepId:
+                message.stepId !== undefined
+                  ? message.stepId
+                  : item.stepId,
+            }
           : item
       );
     }
@@ -406,12 +612,23 @@
     message: { settings?: Partial<RecorderSettings> }
   ): Promise<RecorderState> {
     const state = await loadState();
-    const next = { ...state.settings, ...(message.settings ?? {}) };
+    const next = {
+      ...state.settings,
+      ...(message.settings ?? {}),
+      locale: "ru" as RecorderLocale,
+    };
 
     const threshold = Number(next.slowRequestThresholdMs);
     next.slowRequestThresholdMs = Number.isFinite(threshold)
       ? Math.min(30000, Math.max(250, Math.round(threshold)))
       : 2000;
+
+    if (next.mascotPosition) {
+      next.mascotPosition = {
+        x: Math.max(0, Math.round(next.mascotPosition.x)),
+        y: Math.max(0, Math.round(next.mascotPosition.y)),
+      };
+    }
 
     state.settings = next;
     await saveState(state);
@@ -423,7 +640,56 @@
     message: { bugReport?: Partial<BugReportDraft> }
   ): Promise<RecorderState> {
     const state = await loadState();
-    state.bugReport = { ...state.bugReport, ...(message.bugReport ?? {}) };
+    state.bugReport = {
+      ...state.bugReport,
+      ...(message.bugReport ?? {}),
+    };
+    await saveState(state);
+    return state;
+  }
+
+  async function updateTestCase(
+    message: { testCase?: Partial<TestCaseDraft> }
+  ): Promise<RecorderState> {
+    const state = await loadState();
+    state.testCase = {
+      ...state.testCase,
+      ...(message.testCase ?? {}),
+      steps: message.testCase?.steps ?? state.testCase.steps,
+    };
+    await saveState(state);
+    return state;
+  }
+
+  async function updateChecklist(
+    message: { checklist?: Partial<ChecklistDraft> }
+  ): Promise<RecorderState> {
+    const state = await loadState();
+    state.checklist = {
+      ...state.checklist,
+      ...(message.checklist ?? {}),
+      items: message.checklist?.items ?? state.checklist.items,
+    };
+    await saveState(state);
+    return state;
+  }
+
+  async function resetBuilder(
+    message: { mode?: BuilderMode }
+  ): Promise<RecorderState> {
+    const state = await loadState();
+    const mode = message.mode ?? "bug";
+    resetDraft(state, mode);
+    await saveState(state);
+    return state;
+  }
+
+  async function rebuildBuilder(
+    message: { mode?: BuilderMode }
+  ): Promise<RecorderState> {
+    const state = await loadState();
+    const mode = message.mode ?? "bug";
+    rebuildDraft(state, mode);
     await saveState(state);
     return state;
   }
@@ -467,6 +733,7 @@
 
       const startedAt = requestStartedAt.get(details.requestId);
       requestStartedAt.delete(details.requestId);
+
       const durationMs =
         typeof startedAt === "number"
           ? Math.max(0, Math.round(details.timeStamp - startedAt))
@@ -514,6 +781,7 @@
 
       const startedAt = requestStartedAt.get(details.requestId);
       requestStartedAt.delete(details.requestId);
+
       const durationMs =
         typeof startedAt === "number"
           ? Math.max(0, Math.round(details.timeStamp - startedAt))
@@ -547,6 +815,9 @@
       attached?: boolean;
       settings?: Partial<RecorderSettings>;
       bugReport?: Partial<BugReportDraft>;
+      testCase?: Partial<TestCaseDraft>;
+      checklist?: Partial<ChecklistDraft>;
+      mode?: BuilderMode;
       consoleEvent?: {
         level?: RecorderConsoleEvent["level"];
         message?: string;
@@ -556,21 +827,24 @@
     sender: chrome.runtime.MessageSender
   ) {
     switch (message.type) {
-      case "GET_STATE":
+      case "GET_STATE": {
+        const state = await loadState();
         return {
-          state: await loadState(),
+          state,
           isTargetTab:
             !sender.tab?.id ||
-            sender.tab.id === (await loadState()).targetTabId,
+            sender.tab.id === state.targetTabId,
         };
+      }
       case "START_RECORDING":
         return { state: await startRecording() };
       case "TOGGLE_PAUSE":
         return { state: await togglePause() };
       case "STOP_RECORDING":
         return { state: await stopRecording() };
+      case "NEW_SESSION":
       case "CLEAR_SESSION":
-        return { state: await clearSession() };
+        return { state: await newSession() };
       case "CAPTURE_SCREENSHOT":
         return { state: await captureScreenshot() };
       case "RECORDER_EVENT":
@@ -587,6 +861,14 @@
         return { state: await updateSettings(message) };
       case "UPDATE_BUG_REPORT":
         return { state: await updateBugReport(message) };
+      case "UPDATE_TEST_CASE":
+        return { state: await updateTestCase(message) };
+      case "UPDATE_CHECKLIST":
+        return { state: await updateChecklist(message) };
+      case "RESET_BUILDER":
+        return { state: await resetBuilder(message) };
+      case "REBUILD_BUILDER":
+        return { state: await rebuildBuilder(message) };
       default:
         return { state: await loadState() };
     }
@@ -602,9 +884,13 @@
       .catch(async (error: unknown) => {
         sendResponse({
           state: await loadState(),
-          error: error instanceof Error ? error.message : "Recorder error",
+          error:
+            error instanceof Error
+              ? error.message
+              : "Ошибка Recorder",
         });
       });
+
     return true;
   });
 })();
