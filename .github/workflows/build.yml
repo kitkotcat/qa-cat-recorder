@@ -1,0 +1,38 @@
+name: Build QA Buddy Recorder
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build extension
+        run: npm run build
+
+      - name: Verify extension output
+        run: |
+          test -f dist/manifest.json
+          test -f dist/popup.html
+          test -f dist/scripts/background.js
+          test -f dist/scripts/content.js
+          test -f dist/scripts/pageBridge.js
+
+      - name: Upload unpacked extension
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-buddy-recorder-unpacked
+          path: dist
