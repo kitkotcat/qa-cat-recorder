@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { translate, type Locale } from "../i18n";
+import Mascot from "../mascot/Mascot";
 
 type RecorderStatus = "idle" | "recording" | "paused" | "stopped";
 type TabId = "summary" | "steps" | "network" | "console" | "screenshots";
@@ -226,16 +227,22 @@ function buildBugDraft(state: RecorderState, locale: Locale) {
   ].join("\n");
 }
 
-function downloadSession(state: RecorderState) {
-  const blob = new Blob([JSON.stringify(state, null, 2)], {
-    type: "application/json",
-  });
+function downloadFile(content: string, filename: string, type: string) {
+  const blob = new Blob([content], { type });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = `qa-buddy-session-${state.sessionId ?? "draft"}.json`;
+  anchor.download = filename;
   anchor.click();
   URL.revokeObjectURL(url);
+}
+
+function downloadSession(state: RecorderState) {
+  downloadFile(
+    JSON.stringify(state, null, 2),
+    `qa-buddy-session-${state.sessionId ?? "draft"}.json`,
+    "application/json"
+  );
 }
 
 function QACatLogo() {
@@ -347,6 +354,29 @@ function App() {
     }
   };
 
+  const updateBugField = (
+    field: keyof BugReportDraft,
+    value: string
+  ) => {
+    setState((currentState) => ({
+      ...currentState,
+      bugReport: {
+        ...currentState.bugReport,
+        [field]: value,
+      },
+    }));
+  };
+
+  const persistBugReport = async () => {
+    await run("UPDATE_BUG_REPORT", { bugReport: state.bugReport });
+  };
+
+  const updateSetting = async (
+    settings: Partial<RecorderSettings>
+  ) => {
+    await run("UPDATE_SETTINGS", { settings });
+  };
+
   const tabs: Array<{ id: TabId; label: string; count?: number }> = [
     { id: "summary", label: t("tab.summary") },
     { id: "steps", label: t("tab.steps"), count: state.steps.length },
@@ -454,21 +484,121 @@ function App() {
                 </div>
 
                 {state.status === "stopped" && (
-                  <div className="result-actions">
-                    <button
-                      className="button button-primary"
-                      onClick={() => void copyText(buildBugDraft(state, locale), "notice.bugCopied")}
-                    >
-                      {t("action.copyBug")}
-                    </button>
-                    <button className="button button-secondary" onClick={() => downloadSession(state)}>
-                      {t("action.exportJson")}
-                    </button>
-                    <button className="button button-ghost result-clear" onClick={() => void run("CLEAR_SESSION")}>
-                      {t("action.clear")}
-                    </button>
-                  </div>
+                  <>
+                    <div className="bug-builder">
+                      <div className="section-heading">
+                        <h2>{locale === "ru" ? "Bug Report Builder" : "Bug Report Builder"}</h2>
+                        <span>{locale === "ru" ? "редактируемый draft" : "editable draft"}</span>
+                      </div>
+
+                      <label>
+                        <span>{locale === "ru" ? "Название" : "Title"}</span>
+                        <input
+                          value={state.bugReport.title}
+                          onChange={(event) => updateBugField("title", event.target.value)}
+                          onBlur={() => void persistBugReport()}
+                          placeholder={locale === "ru" ? "Коротко опиши проблему" : "Short problem summary"}
+                        />
+                      </label>
+
+                      <label>
+                        <span>{locale === "ru" ? "Предусловия" : "Preconditions"}</span>
+                        <textarea
+                          value={state.bugReport.preconditions}
+                          onChange={(event) => updateBugField("preconditions", event.target.value)}
+                          onBlur={() => void persistBugReport()}
+                          placeholder={locale === "ru" ? "Что должно быть подготовлено до воспроизведения" : "What must be prepared before reproduction"}
+                        />
+                      </label>
+
+                      <div className="bug-grid">
+                        <label>
+                          <span>{locale === "ru" ? "Фактический результат" : "Actual result"}</span>
+                          <textarea
+                            value={state.bugReport.actualResult}
+                            onChange={(event) => updateBugField("actualResult", event.target.value)}
+                            onBlur={() => void persistBugReport()}
+                          />
+                        </label>
+                        <label>
+                          <span>{locale === "ru" ? "Ожидаемый результат" : "Expected result"}</span>
+                          <textarea
+                            value={state.bugReport.expectedResult}
+                            onChange={(event) => updateBugField("expectedResult", event.target.value)}
+                            onBlur={() => void persistBugReport()}
+                          />
+                        </label>
+                      </div>
+
+                      <label>
+                        <span>{locale === "ru" ? "Окружение" : "Environment"}</span>
+                        <textarea
+                          value={state.bugReport.environment}
+                          onChange={(event) => updateBugField("environment", event.target.value)}
+                          onBlur={() => void persistBugReport()}
+                        />
+                      </label>
+                    </div>
+
+                    <div className="result-actions">
+                      <button
+                        className="button button-primary"
+                        onClick={() => void copyText(buildBugDraft(state, locale), "notice.bugCopied")}
+                      >
+                        {t("action.copyBug")}
+                      </button>
+                      <button
+                        className="button button-secondary"
+                        onClick={() =>
+                          downloadFile(
+                            buildBugDraft(state, locale),
+                            `qa-buddy-bug-${state.sessionId ?? "draft"}.md`,
+                            "text/markdown"
+                          )
+                        }
+                      >
+                        Markdown
+                      </button>
+                      <button className="button button-secondary" onClick={() => downloadSession(state)}>
+                        {t("action.exportJson")}
+                      </button>
+                      <button className="button button-ghost" onClick={() => void run("CLEAR_SESSION")}>
+                        {t("action.clear")}
+                      </button>
+                    </div>
+                  </>
                 )}
+
+                <div className="settings-card">
+                  <div>
+                    <strong>{locale === "ru" ? "Mascot" : "Mascot"}</strong>
+                    <small>{locale === "ru" ? "Лёгкий pixel-cat assistant" : "Lightweight pixel-cat assistant"}</small>
+                  </div>
+                  <label className="setting-toggle">
+                    <input
+                      type="checkbox"
+                      checked={state.settings.mascotEnabled}
+                      onChange={(event) => void updateSetting({ mascotEnabled: event.target.checked })}
+                    />
+                    <span>{locale === "ru" ? "Показывать" : "Show"}</span>
+                  </label>
+                  <label className="setting-toggle">
+                    <input
+                      type="checkbox"
+                      checked={state.settings.reducedMotion}
+                      onChange={(event) => void updateSetting({ reducedMotion: event.target.checked })}
+                    />
+                    <span>{locale === "ru" ? "Меньше анимаций" : "Reduced motion"}</span>
+                  </label>
+                  <label className="setting-toggle">
+                    <input
+                      type="checkbox"
+                      checked={state.settings.funMode}
+                      onChange={(event) => void updateSetting({ funMode: event.target.checked })}
+                    />
+                    <span>{locale === "ru" ? "Fun mode" : "Fun mode"}</span>
+                  </label>
+                </div>
               </>
             )}
           </div>
@@ -613,6 +743,13 @@ function App() {
         <span aria-hidden="true">🛡</span>
         <p><strong>{t("privacy.title")}</strong> {t("privacy.text")}</p>
       </aside>
+
+      <Mascot
+        enabled={state.settings.mascotEnabled}
+        reducedMotion={state.settings.reducedMotion}
+        funMode={state.settings.funMode}
+        recording={state.status === "recording"}
+      />
 
       {notice && <p className="notice">{notice}</p>}
       {error && <p className="error">{error}</p>}
