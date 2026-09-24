@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { translate, type Locale } from "../i18n";
 import Mascot from "../mascot/Mascot";
 
 type RecorderStatus = "idle" | "recording" | "paused" | "stopped";
 type TabId = "summary" | "steps" | "network" | "console" | "screenshots" | "settings";
+type BuilderMode = "bug" | "testcase" | "checklist";
 type NetworkFilter = "all" | "4xx" | "5xx" | "err" | "slow";
 
 type RecorderStep = {
@@ -42,14 +42,17 @@ type RecorderScreenshot = {
   url: string;
   timestamp: number;
   attached?: boolean;
+  stepId?: string | null;
 };
 
-type RecorderSettings = {
-  locale: Locale;
-  mascotEnabled: boolean;
-  reducedMotion: boolean;
-  funMode: boolean;
-  slowRequestThresholdMs: number;
+type EnvironmentInfo = {
+  url: string;
+  domain: string;
+  browser: string;
+  os: string;
+  viewport: string;
+  language: string;
+  capturedAt: number | null;
 };
 
 type BugReportDraft = {
@@ -58,10 +61,49 @@ type BugReportDraft = {
   actualResult: string;
   expectedResult: string;
   environment: string;
+  severity: "Blocker" | "Critical" | "Major" | "Minor" | "Trivial";
+  priority: "High" | "Medium" | "Low";
+};
+
+type TestCaseDraft = {
+  title: string;
+  module: string;
+  preconditions: string;
+  testData: string;
+  steps: string[];
+  expectedResult: string;
+  priority: "High" | "Medium" | "Low";
+  caseType: "Positive" | "Negative" | "Edge";
+  tags: string;
+};
+
+type ChecklistItem = {
+  id: string;
+  text: string;
+  checked: boolean;
+};
+
+type ChecklistDraft = {
+  title: string;
+  items: ChecklistItem[];
+};
+
+type MascotPosition = {
+  x: number;
+  y: number;
+};
+
+type RecorderSettings = {
+  locale: "ru" | "en";
+  mascotEnabled: boolean;
+  reducedMotion: boolean;
+  funMode: boolean;
+  slowRequestThresholdMs: number;
+  mascotPosition: MascotPosition | null;
 };
 
 type RecorderState = {
-  schemaVersion: 2;
+  schemaVersion: 3;
   status: RecorderStatus;
   sessionId: string | null;
   targetTabId: number | null;
@@ -73,12 +115,15 @@ type RecorderState = {
   networkEvents: RecorderNetworkEvent[];
   consoleEvents: RecorderConsoleEvent[];
   screenshots: RecorderScreenshot[];
+  environment: EnvironmentInfo;
   bugReport: BugReportDraft;
+  testCase: TestCaseDraft;
+  checklist: ChecklistDraft;
   settings: RecorderSettings;
 };
 
 const emptyState: RecorderState = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   status: "idle",
   sessionId: null,
   targetTabId: null,
@@ -90,12 +135,38 @@ const emptyState: RecorderState = {
   networkEvents: [],
   consoleEvents: [],
   screenshots: [],
+  environment: {
+    url: "",
+    domain: "",
+    browser: "",
+    os: "",
+    viewport: "",
+    language: "ru",
+    capturedAt: null,
+  },
   bugReport: {
     title: "",
     preconditions: "",
     actualResult: "",
     expectedResult: "",
     environment: "",
+    severity: "Major",
+    priority: "Medium",
+  },
+  testCase: {
+    title: "",
+    module: "",
+    preconditions: "",
+    testData: "",
+    steps: [],
+    expectedResult: "",
+    priority: "Medium",
+    caseType: "Positive",
+    tags: "",
+  },
+  checklist: {
+    title: "",
+    items: [],
   },
   settings: {
     locale: "ru",
@@ -103,6 +174,7 @@ const emptyState: RecorderState = {
     reducedMotion: false,
     funMode: false,
     slowRequestThresholdMs: 2000,
+    mascotPosition: null,
   },
 };
 
@@ -114,8 +186,24 @@ function normalizeState(raw?: Partial<RecorderState>): RecorderState {
     networkEvents: raw?.networkEvents ?? [],
     consoleEvents: raw?.consoleEvents ?? [],
     screenshots: raw?.screenshots ?? [],
+    environment: { ...emptyState.environment, ...(raw?.environment ?? {}) },
     bugReport: { ...emptyState.bugReport, ...(raw?.bugReport ?? {}) },
-    settings: { ...emptyState.settings, ...(raw?.settings ?? {}) },
+    testCase: {
+      ...emptyState.testCase,
+      ...(raw?.testCase ?? {}),
+      steps: raw?.testCase?.steps ?? [],
+    },
+    checklist: {
+      ...emptyState.checklist,
+      ...(raw?.checklist ?? {}),
+      items: raw?.checklist?.items ?? [],
+    },
+    settings: {
+      ...emptyState.settings,
+      ...(raw?.settings ?? {}),
+      locale: "ru",
+      mascotPosition: raw?.settings?.mascotPosition ?? null,
+    },
   };
 }
 
@@ -136,16 +224,18 @@ function safeUrl(raw: string) {
   }
 }
 
-function formatClock(timestamp: number | null, locale: Locale) {
+function formatClock(timestamp: number | null) {
   if (!timestamp) return "—";
-  return new Date(timestamp).toLocaleTimeString(
-    locale === "ru" ? "ru-RU" : "en-US",
-    { hour: "2-digit", minute: "2-digit", second: "2-digit" }
-  );
+  return new Date(timestamp).toLocaleTimeString("ru-RU", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 }
 
 function formatDuration(state: RecorderState, now: number) {
   if (!state.startedAt) return "00:00";
+
   const end =
     state.status === "paused" && state.pausedAt
       ? state.pausedAt
@@ -157,7 +247,9 @@ function formatDuration(state: RecorderState, now: number) {
     0,
     end - state.startedAt - state.accumulatedPausedMs
   );
+
   const totalSeconds = Math.floor(elapsed / 1000);
+
   return `${Math.floor(totalSeconds / 60)
     .toString()
     .padStart(2, "0")}:${(totalSeconds % 60)
@@ -165,74 +257,111 @@ function formatDuration(state: RecorderState, now: number) {
     .padStart(2, "0")}`;
 }
 
-function buildBugDraft(state: RecorderState, locale: Locale) {
-  const ru = locale === "ru";
-  const steps =
-    state.steps.length > 0
-      ? state.steps
-          .map(
-            (step, index) =>
-              `${index + 1}. ${step.label}${step.note ? ` — ${step.note}` : ""}`
-          )
-          .join("\n")
-      : ru
-        ? "1. [Добавьте шаги воспроизведения]"
-        : "1. [Add reproduction steps]";
+function buildBugDraft(state: RecorderState) {
+  const steps = state.steps.length
+    ? state.steps
+        .map(
+          (step, index) =>
+            `${index + 1}. ${step.label}${step.note ? ` — ${step.note}` : ""}`
+        )
+        .join("\n")
+    : "1. [Добавьте шаги воспроизведения]";
 
-  const network =
-    state.networkEvents.length > 0
-      ? state.networkEvents
-          .slice(-10)
-          .map(
-            (event) =>
-              `- ${event.method} ${event.statusCode ?? event.error ?? "ERR"} ${event.url}${
-                typeof event.durationMs === "number"
-                  ? ` · ${event.durationMs} ms${event.slow ? " · SLOW" : ""}`
-                  : ""
-              }`
-          )
-          .join("\n")
-      : ru
-        ? "- Network issues не зафиксированы"
-        : "- No network issues captured";
+  const network = state.networkEvents.length
+    ? state.networkEvents
+        .slice(-10)
+        .map(
+          (event) =>
+            `- ${event.method} ${event.statusCode ?? event.error ?? "ERR"} ${event.url}${
+              typeof event.durationMs === "number"
+                ? ` · ${event.durationMs} ms${event.slow ? " · SLOW" : ""}`
+                : ""
+            }`
+        )
+        .join("\n")
+    : "- Network issues не зафиксированы";
 
-  const consoleErrors =
-    state.consoleEvents.length > 0
-      ? state.consoleEvents
-          .slice(-10)
-          .map((event) => `- [${event.level}] ${event.message}`)
-          .join("\n")
-      : ru
-        ? "- Console errors не зафиксированы"
-        : "- No console errors captured";
+  const consoleErrors = state.consoleEvents.length
+    ? state.consoleEvents
+        .slice(-10)
+        .map((event) => `- [${event.level}] ${event.message}`)
+        .join("\n")
+    : "- Console errors не зафиксированы";
 
   return [
-    ru ? "Название:" : "Title:",
-    state.bugReport.title || (ru ? "[Опишите проблему]" : "[Describe the problem]"),
+    "Название:",
+    state.bugReport.title || "[Опишите проблему]",
     "",
-    ru ? "Окружение:" : "Environment:",
-    state.bugReport.environment || navigator.userAgent,
+    `Severity: ${state.bugReport.severity}`,
+    `Priority: ${state.bugReport.priority}`,
     "",
-    ru ? "Предусловия:" : "Preconditions:",
+    "Окружение:",
+    state.bugReport.environment || "—",
+    "",
+    "Предусловия:",
     state.bugReport.preconditions || "—",
     "",
-    ru ? "Шаги воспроизведения:" : "Steps to reproduce:",
+    "Шаги воспроизведения:",
     steps,
     "",
-    ru ? "Фактический результат:" : "Actual result:",
+    "Фактический результат:",
     state.bugReport.actualResult || "—",
     "",
-    ru ? "Ожидаемый результат:" : "Expected result:",
+    "Ожидаемый результат:",
     state.bugReport.expectedResult || "—",
     "",
-    ru ? "Технические доказательства:" : "Technical evidence:",
-    `${ru ? "Скриншоты" : "Screenshots"}: ${state.screenshots.filter((item) => item.attached !== false).length}`,
+    "Технические доказательства:",
+    `Скриншоты: ${state.screenshots.filter((item) => item.attached !== false).length}`,
     "",
     "Network:",
     network,
     "",
     "Console:",
     consoleErrors,
+  ].join("\n");
+}
+
+function buildTestCaseDraft(state: RecorderState) {
+  const steps = state.testCase.steps.length
+    ? state.testCase.steps
+        .map((step, index) => `${index + 1}. ${step}`)
+        .join("\n")
+    : "1. [Добавьте шаги]";
+
+  return [
+    "Test Case:",
+    state.testCase.title || "[Название проверки]",
+    "",
+    `Module / Feature: ${state.testCase.module || "—"}`,
+    `Type: ${state.testCase.caseType}`,
+    `Priority: ${state.testCase.priority}`,
+    `Tags: ${state.testCase.tags || "—"}`,
+    "",
+    "Предусловия:",
+    state.testCase.preconditions || "—",
+    "",
+    "Тестовые данные:",
+    state.testCase.testData || "—",
+    "",
+    "Шаги:",
+    steps,
+    "",
+    "Ожидаемый результат:",
+    state.testCase.expectedResult || "—",
+  ].join("\n");
+}
+
+function buildChecklistDraft(state: RecorderState) {
+  const items = state.checklist.items.length
+    ? state.checklist.items
+        .map((item) => `- [${item.checked ? "x" : " "}] ${item.text}`)
+        .join("\n")
+    : "- [ ] [Добавьте пункт]";
+
+  return [
+    `# ${state.checklist.title || "Чек-лист"}`,
+    "",
+    items,
   ].join("\n");
 }
 
@@ -246,17 +375,9 @@ function downloadFile(content: string, filename: string, type: string) {
   URL.revokeObjectURL(url);
 }
 
-function downloadSession(state: RecorderState) {
-  downloadFile(
-    JSON.stringify(state, null, 2),
-    `qa-buddy-session-${state.sessionId ?? "draft"}.json`,
-    "application/json"
-  );
-}
-
 function QACatLogo() {
   return (
-    <svg viewBox="0 0 120 120" className="qa-logo" aria-label="QA Cat">
+    <svg viewBox="0 0 120 120" className="qa-logo" aria-label="QA Cat Buddy">
       <circle cx="60" cy="60" r="55" fill="#020617" stroke="#22d3ee" strokeWidth="3" />
       <path d="M30 45L35 18L53 36" fill="#0f172a" stroke="#22d3ee" strokeWidth="3" strokeLinejoin="round" />
       <path d="M90 45L85 18L67 36" fill="#0f172a" stroke="#22d3ee" strokeWidth="3" strokeLinejoin="round" />
@@ -266,38 +387,46 @@ function QACatLogo() {
       <circle cx="47" cy="60" r="2" fill="#020617" />
       <circle cx="73" cy="60" r="2" fill="#020617" />
       <path d="M55 70L60 74L65 70" fill="#22d3ee" stroke="#22d3ee" strokeWidth="2" strokeLinejoin="round" />
-      <path d="M52 85H68" fill="none" stroke="#cbd5e1" strokeWidth="3" strokeLinecap="round" />
       <path d="M31 71L13 66M31 78L11 80M89 71L107 66M89 78L109 80" stroke="#94a3b8" strokeWidth="2" />
     </svg>
   );
 }
 
-function App() {
+export default function App() {
   const [state, setState] = useState<RecorderState>(emptyState);
   const [activeTab, setActiveTab] = useState<TabId>("summary");
+  const [builderMode, setBuilderMode] = useState<BuilderMode>("bug");
   const [networkFilter, setNetworkFilter] = useState<NetworkFilter>("all");
   const [now, setNow] = useState(Date.now());
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
-  const locale = state.settings.locale;
-  const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
-
   useEffect(() => {
-    void command("GET_STATE").then(setState).catch((err: unknown) => {
-      setError(err instanceof Error ? err.message : "Unable to load session");
-    });
+    void command("GET_STATE")
+      .then(setState)
+      .catch((err: unknown) => {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Не удалось загрузить состояние Recorder"
+        );
+      });
 
     const listener = (
       changes: Record<string, chrome.storage.StorageChange>,
       areaName: string
     ) => {
       if (areaName !== "local") return;
+
       const next = changes.qaBuddyRecorderState?.newValue;
-      if (next) setState(normalizeState(next as Partial<RecorderState>));
+
+      if (next) {
+        setState(normalizeState(next as Partial<RecorderState>));
+      }
     };
 
     chrome.storage.onChanged.addListener(listener);
+
     return () => chrome.storage.onChanged.removeListener(listener);
   }, []);
 
@@ -306,19 +435,33 @@ function App() {
     return () => window.clearInterval(timer);
   }, []);
 
-  const duration = useMemo(() => formatDuration(state, now), [state, now]);
-  const isActive = state.status === "recording" || state.status === "paused";
+  const duration = useMemo(
+    () => formatDuration(state, now),
+    [state, now]
+  );
+
+  const isActive =
+    state.status === "recording" ||
+    state.status === "paused";
 
   const filteredNetwork = state.networkEvents.filter((event) => {
     if (networkFilter === "all") return true;
     if (networkFilter === "err") return Boolean(event.error);
     if (networkFilter === "slow") return Boolean(event.slow);
-    if (networkFilter === "4xx")
-      return Boolean(event.statusCode && event.statusCode >= 400 && event.statusCode < 500);
-    return Boolean(event.statusCode && event.statusCode >= 500);
-  });
 
-  const slowRequests = state.networkEvents.filter((event) => event.slow).length;
+    if (networkFilter === "4xx") {
+      return Boolean(
+        event.statusCode &&
+          event.statusCode >= 400 &&
+          event.statusCode < 500
+      );
+    }
+
+    return Boolean(
+      event.statusCode &&
+        event.statusCode >= 500
+    );
+  });
 
   const run = async (
     type: string,
@@ -327,60 +470,61 @@ function App() {
     try {
       setError("");
       setNotice("");
+
       const next = await command(type, payload);
       setState(next);
-      if (type === "CAPTURE_SCREENSHOT") setNotice(t("notice.screenshot"));
+
+      if (type === "CAPTURE_SCREENSHOT") {
+        setNotice("Скриншот сохранён");
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Recorder action failed");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Ошибка Recorder"
+      );
     }
   };
 
-  const setLocale = async (nextLocale: Locale) => {
-    await run("UPDATE_SETTINGS", { settings: { locale: nextLocale } });
-  };
-
-  const copyText = async (text: string, noticeKey: "notice.copied" | "notice.bugCopied") => {
+  const copyText = async (
+    text: string,
+    message = "Скопировано"
+  ) => {
     try {
       await navigator.clipboard.writeText(text);
-      setNotice(t(noticeKey));
+      setNotice(message);
       setError("");
     } catch {
-      setError(locale === "ru" ? "Не удалось скопировать данные." : "Unable to copy data.");
+      setError("Не удалось скопировать данные");
     }
   };
 
-  const addManualStep = async () => {
-    const label = window.prompt(
-      locale === "ru" ? "Опиши шаг:" : "Describe the step:"
-    );
-    if (label?.trim()) await run("ADD_MANUAL_STEP", { label });
-  };
-
-  const addNote = async (step: RecorderStep) => {
-    const note = window.prompt(
-      locale === "ru" ? "Заметка к шагу:" : "Step note:",
-      step.note ?? ""
-    );
-    if (note !== null) {
-      await run("UPDATE_STEP", { stepId: step.id, note });
+  const confirmNewSession = async () => {
+    if (
+      state.sessionId &&
+      !window.confirm(
+        "Начать новую сессию? Текущие steps, evidence и drafts будут удалены."
+      )
+    ) {
+      return;
     }
+
+    await run("NEW_SESSION");
+    setBuilderMode("bug");
+    setActiveTab("summary");
   };
 
-  const updateBugField = (
-    field: keyof BugReportDraft,
-    value: string
-  ) => {
-    setState((currentState) => ({
-      ...currentState,
-      bugReport: {
-        ...currentState.bugReport,
-        [field]: value,
-      },
-    }));
+  const resetBuilder = async () => {
+    if (!window.confirm("Сбросить только текущий draft? Raw evidence останется.")) {
+      return;
+    }
+
+    await run("RESET_BUILDER", { mode: builderMode });
   };
 
-  const persistBugReport = async () => {
-    await run("UPDATE_BUG_REPORT", { bugReport: state.bugReport });
+  const rebuildBuilder = async () => {
+    await run("REBUILD_BUILDER", { mode: builderMode });
+    setNotice("Draft пересобран из текущих steps");
   };
 
   const updateSetting = async (
@@ -389,82 +533,204 @@ function App() {
     await run("UPDATE_SETTINGS", { settings });
   };
 
-  const tabs: Array<{ id: TabId; label: string; count?: number }> = [
-    { id: "summary", label: t("tab.summary") },
-    { id: "steps", label: t("tab.steps"), count: state.steps.length },
-    { id: "network", label: t("tab.network"), count: state.networkEvents.length },
-    { id: "console", label: t("tab.console"), count: state.consoleEvents.length },
-    { id: "screenshots", label: t("tab.screenshots"), count: state.screenshots.length },
-    { id: "settings", label: t("tab.settings") },
-  ];
+  const updateBugField = (
+    field: keyof BugReportDraft,
+    value: string
+  ) => {
+    setState((current) => ({
+      ...current,
+      bugReport: {
+        ...current.bugReport,
+        [field]: value,
+      },
+    }));
+  };
+
+  const saveBugReport = async () => {
+    await run("UPDATE_BUG_REPORT", {
+      bugReport: state.bugReport,
+    });
+  };
+
+  const updateTestCaseField = (
+    field: keyof TestCaseDraft,
+    value: string | string[]
+  ) => {
+    setState((current) => ({
+      ...current,
+      testCase: {
+        ...current.testCase,
+        [field]: value,
+      },
+    }));
+  };
+
+  const saveTestCase = async () => {
+    await run("UPDATE_TEST_CASE", {
+      testCase: state.testCase,
+    });
+  };
+
+  const updateChecklist = async (
+    checklist: ChecklistDraft
+  ) => {
+    setState((current) => ({
+      ...current,
+      checklist,
+    }));
+
+    await run("UPDATE_CHECKLIST", {
+      checklist,
+    });
+  };
+
+  const addChecklistItem = async () => {
+    const text = window.prompt("Новый пункт чек-листа:");
+    if (!text?.trim()) return;
+
+    await updateChecklist({
+      ...state.checklist,
+      items: [
+        ...state.checklist.items,
+        {
+          id: crypto.randomUUID(),
+          text: text.trim(),
+          checked: false,
+        },
+      ],
+    });
+  };
+
+  const addManualStep = async () => {
+    const label = window.prompt("Опиши шаг:");
+    if (label?.trim()) {
+      await run("ADD_MANUAL_STEP", { label });
+    }
+  };
+
+  const addStepNote = async (step: RecorderStep) => {
+    const note = window.prompt(
+      "Заметка к шагу:",
+      step.note ?? ""
+    );
+
+    if (note !== null) {
+      await run("UPDATE_STEP", {
+        stepId: step.id,
+        note,
+      });
+    }
+  };
 
   const statusLabel =
     state.status === "recording"
-      ? t("status.recording")
+      ? "● ЗАПИСЬ"
       : state.status === "paused"
-        ? t("status.paused")
+        ? "ПАУЗА"
         : state.status === "stopped"
-          ? t("status.stopped")
-          : t("status.idle");
+          ? "ГОТОВО"
+          : "ГОТОВ";
 
-  const domain = state.steps[0]?.url ? safeUrl(state.steps[0].url)?.hostname ?? "—" : "—";
+  const tabs: Array<{
+    id: TabId;
+    label: string;
+    count?: number;
+  }> = [
+    { id: "summary", label: "Сводка" },
+    { id: "steps", label: "Шаги", count: state.steps.length },
+    { id: "network", label: "Network", count: state.networkEvents.length },
+    { id: "console", label: "Console", count: state.consoleEvents.length },
+    { id: "screenshots", label: "Скриншоты", count: state.screenshots.length },
+    { id: "settings", label: "Настройки" },
+  ];
 
   return (
     <main className="popup-shell">
       <header className="brand">
-        <div className="cat-badge"><QACatLogo /></div>
-        <div className="brand-copy">
-          <p className="eyebrow">{t("app.subtitle")}</p>
-          <h1>Recorder</h1>
+        <div className="cat-badge">
+          <QACatLogo />
         </div>
 
-        <div className="header-actions">
-          <div className="language-switch" aria-label="Language">
-            <button
-              className={locale === "ru" ? "active" : ""}
-              onClick={() => void setLocale("ru")}
-            >
-              RU
-            </button>
-            <button
-              className={locale === "en" ? "active" : ""}
-              onClick={() => void setLocale("en")}
-            >
-              EN
-            </button>
-          </div>
-          <span className={`status-pill status-${state.status}`}>{statusLabel}</span>
+        <div className="brand-copy">
+          <p className="eyebrow">QA CAT BUDDY</p>
+          <h1>Recorder</h1>
+          <small className="product-note">
+            Инструмент для русскоязычных QA
+          </small>
         </div>
+
+        <span className={`status-pill status-${state.status}`}>
+          {statusLabel}
+        </span>
       </header>
 
       <section className="session-card">
-        <div><span className="metric-label">{t("metric.steps")}</span><strong>{state.steps.length}</strong></div>
-        <div><span className="metric-label">{t("metric.time")}</span><strong>{duration}</strong></div>
-        <div><span className="metric-label">{t("metric.http")}</span><strong>{state.networkEvents.length}</strong></div>
-        <div><span className="metric-label">{t("metric.console")}</span><strong>{state.consoleEvents.length}</strong></div>
+        <div>
+          <span className="metric-label">ШАГИ</span>
+          <strong>{state.steps.length}</strong>
+        </div>
+        <div>
+          <span className="metric-label">ВРЕМЯ</span>
+          <strong>{duration}</strong>
+        </div>
+        <div>
+          <span className="metric-label">HTTP</span>
+          <strong>{state.networkEvents.length}</strong>
+        </div>
+        <div>
+          <span className="metric-label">CONSOLE</span>
+          <strong>{state.consoleEvents.length}</strong>
+        </div>
       </section>
 
       <section className="controls">
         {!isActive ? (
-          <button className="button button-primary" onClick={() => void run("START_RECORDING")}>
-            ● {t("action.start")}
-          </button>
+          <>
+            <button
+              className="button button-primary"
+              onClick={() => void run("START_RECORDING")}
+            >
+              ● Начать запись
+            </button>
+
+            {state.sessionId && (
+              <button
+                className="button button-secondary compact-wide"
+                onClick={() => void confirmNewSession()}
+              >
+                Новая сессия
+              </button>
+            )}
+          </>
         ) : (
           <>
-            <button className="button button-secondary compact" onClick={() => void run("CAPTURE_SCREENSHOT")} title={t("action.screenshot")}>
+            <button
+              className="button button-secondary compact"
+              onClick={() => void run("CAPTURE_SCREENSHOT")}
+              title="Сделать скриншот"
+            >
               📸 {state.screenshots.length}
             </button>
-            <button className="button button-secondary compact" onClick={() => void run("TOGGLE_PAUSE")}>
+
+            <button
+              className="button button-secondary compact"
+              onClick={() => void run("TOGGLE_PAUSE")}
+              title={state.status === "paused" ? "Продолжить" : "Пауза"}
+            >
               {state.status === "paused" ? "▶" : "Ⅱ"}
             </button>
-            <button className="button button-danger" onClick={() => void run("STOP_RECORDING")}>
-              ■ {t("action.stop")}
+
+            <button
+              className="button button-danger"
+              onClick={() => void run("STOP_RECORDING")}
+            >
+              ■ Стоп
             </button>
           </>
         )}
       </section>
 
-      <nav className="tabs" aria-label="Recorder sections">
+      <nav className="tabs" aria-label="Разделы Recorder">
         {tabs.map((tab) => (
           <button
             key={tab.id}
@@ -480,138 +746,333 @@ function App() {
       <section className="tab-content">
         {activeTab === "summary" && (
           <div className="panel">
-            <div className="section-heading">
-              <h2>{state.status === "stopped" ? t("summary.evidenceReady") : t("summary.title")}</h2>
-              <span>{statusLabel}</span>
-            </div>
-
             {!state.sessionId ? (
-              <div className="empty-state">{t("summary.empty")}</div>
+              <div className="empty-state">
+                Запусти запись и воспроизведи тестовый сценарий.
+              </div>
             ) : (
               <>
                 <div className="summary-grid">
-                  <div><span>{t("summary.domain")}</span><strong>{domain}</strong></div>
-                  <div><span>{t("summary.started")}</span><strong>{formatClock(state.startedAt, locale)}</strong></div>
-                  <div><span>{t("summary.finished")}</span><strong>{formatClock(state.finishedAt, locale)}</strong></div>
-                  <div><span>{t("metric.time")}</span><strong>{duration}</strong></div>
+                  <div>
+                    <span>ДОМЕН</span>
+                    <strong>{state.environment.domain || "—"}</strong>
+                  </div>
+                  <div>
+                    <span>НАЧАЛО</span>
+                    <strong>{formatClock(state.startedAt)}</strong>
+                  </div>
+                  <div>
+                    <span>ЗАВЕРШЕНИЕ</span>
+                    <strong>{formatClock(state.finishedAt)}</strong>
+                  </div>
+                  <div>
+                    <span>VIEWPORT</span>
+                    <strong>{state.environment.viewport || "—"}</strong>
+                  </div>
+                </div>
+
+                <div className="environment-card">
+                  <div><span>URL</span><strong>{state.environment.url || "—"}</strong></div>
+                  <div><span>Browser</span><strong>{state.environment.browser || "—"}</strong></div>
+                  <div><span>OS</span><strong>{state.environment.os || "—"}</strong></div>
+                  <div><span>Locale</span><strong>{state.environment.language || "—"}</strong></div>
                 </div>
 
                 {state.status === "stopped" && (
                   <>
-                    <div className="bug-builder">
-                      <div className="bug-builder-head">
-                        <div>
-                          <p className="eyebrow">BUG REPORT</p>
-                          <h2>Bug Report Builder</h2>
-                          <small>{locale === "ru" ? "Проверь draft перед экспортом" : "Review the draft before export"}</small>
+                    <div className="builder-switch">
+                      <button className={builderMode === "bug" ? "active" : ""} onClick={() => setBuilderMode("bug")}>
+                        Bug Report
+                      </button>
+                      <button className={builderMode === "testcase" ? "active" : ""} onClick={() => setBuilderMode("testcase")}>
+                        Test Case
+                      </button>
+                      <button className={builderMode === "checklist" ? "active" : ""} onClick={() => setBuilderMode("checklist")}>
+                        Checklist
+                      </button>
+                    </div>
+
+                    {builderMode === "bug" && (
+                      <div className="builder-card">
+                        <div className="builder-head">
+                          <div>
+                            <p className="eyebrow">BUG REPORT</p>
+                            <h2>Черновик бага</h2>
+                          </div>
+                          <div className="evidence-chips">
+                            <span>👣 {state.steps.length}</span>
+                            <span>🌐 {state.networkEvents.length}</span>
+                            <span>⚠ {state.consoleEvents.length}</span>
+                            <span>📸 {state.screenshots.length}</span>
+                          </div>
                         </div>
-                        <div className="evidence-chips">
-                          <span>👣 {state.steps.length}</span>
-                          <span>🌐 {state.networkEvents.length}</span>
-                          <span>⚠ {state.consoleEvents.length}</span>
-                          <span>📸 {state.screenshots.filter((item) => item.attached !== false).length}</span>
-                        </div>
-                      </div>
 
-                      <label>
-                        <span>{locale === "ru" ? "Название" : "Title"}</span>
-                        <input
-                          value={state.bugReport.title}
-                          onChange={(event) => updateBugField("title", event.target.value)}
-                          onBlur={() => void persistBugReport()}
-                          placeholder={locale === "ru" ? "Коротко опиши проблему" : "Short problem summary"}
-                        />
-                      </label>
-
-                      <label>
-                        <span>{locale === "ru" ? "Предусловия" : "Preconditions"}</span>
-                        <textarea
-                          value={state.bugReport.preconditions}
-                          onChange={(event) => updateBugField("preconditions", event.target.value)}
-                          onBlur={() => void persistBugReport()}
-                          placeholder={locale === "ru" ? "Что должно быть подготовлено до воспроизведения" : "What must be prepared before reproduction"}
-                        />
-                      </label>
-
-                      <div className="bug-results-stack">
                         <label>
-                          <span>{locale === "ru" ? "Фактический результат" : "Actual result"}</span>
+                          <span>Название</span>
+                          <input
+                            value={state.bugReport.title}
+                            onChange={(event) => updateBugField("title", event.target.value)}
+                            onBlur={() => void saveBugReport()}
+                            placeholder="Коротко опиши проблему"
+                          />
+                        </label>
+
+                        <div className="field-grid">
+                          <label>
+                            <span>Severity</span>
+                            <select
+                              value={state.bugReport.severity}
+                              onChange={(event) => updateBugField("severity", event.target.value)}
+                              onBlur={() => void saveBugReport()}
+                            >
+                              <option>Blocker</option>
+                              <option>Critical</option>
+                              <option>Major</option>
+                              <option>Minor</option>
+                              <option>Trivial</option>
+                            </select>
+                          </label>
+
+                          <label>
+                            <span>Priority</span>
+                            <select
+                              value={state.bugReport.priority}
+                              onChange={(event) => updateBugField("priority", event.target.value)}
+                              onBlur={() => void saveBugReport()}
+                            >
+                              <option>High</option>
+                              <option>Medium</option>
+                              <option>Low</option>
+                            </select>
+                          </label>
+                        </div>
+
+                        <label>
+                          <span>Предусловия</span>
+                          <textarea
+                            value={state.bugReport.preconditions}
+                            onChange={(event) => updateBugField("preconditions", event.target.value)}
+                            onBlur={() => void saveBugReport()}
+                          />
+                        </label>
+
+                        <label>
+                          <span>Фактический результат</span>
                           <textarea
                             value={state.bugReport.actualResult}
                             onChange={(event) => updateBugField("actualResult", event.target.value)}
-                            onBlur={() => void persistBugReport()}
+                            onBlur={() => void saveBugReport()}
                           />
                         </label>
+
                         <label>
-                          <span>{locale === "ru" ? "Ожидаемый результат" : "Expected result"}</span>
+                          <span>Ожидаемый результат</span>
                           <textarea
                             value={state.bugReport.expectedResult}
                             onChange={(event) => updateBugField("expectedResult", event.target.value)}
-                            onBlur={() => void persistBugReport()}
+                            onBlur={() => void saveBugReport()}
                           />
                         </label>
+
+                        <label>
+                          <span>Окружение</span>
+                          <textarea
+                            value={state.bugReport.environment}
+                            onChange={(event) => updateBugField("environment", event.target.value)}
+                            onBlur={() => void saveBugReport()}
+                          />
+                        </label>
+
+                        <div className="builder-actions">
+                          <button className="button button-primary" onClick={() => void copyText(buildBugDraft(state), "Bug Report скопирован")}>
+                            Скопировать
+                          </button>
+                          <button className="button button-secondary" onClick={() => downloadFile(buildBugDraft(state), `qa-buddy-bug-${state.sessionId}.md`, "text/markdown")}>
+                            Markdown
+                          </button>
+                        </div>
                       </div>
+                    )}
 
-                      <label>
-                        <span>{locale === "ru" ? "Окружение" : "Environment"}</span>
-                        <textarea
-                          value={state.bugReport.environment}
-                          onChange={(event) => updateBugField("environment", event.target.value)}
-                          onBlur={() => void persistBugReport()}
-                        />
-                      </label>
-                    </div>
+                    {builderMode === "testcase" && (
+                      <div className="builder-card">
+                        <div className="builder-head">
+                          <div>
+                            <p className="eyebrow">TEST CASE</p>
+                            <h2>Test Case Builder</h2>
+                          </div>
+                          <span className="hint">steps берутся из recorded session</span>
+                        </div>
 
-                    <div className="result-actions">
-                      <button
-                        className="button button-secondary"
-                        onClick={() => void persistBugReport()}
-                      >
-                        {locale === "ru" ? "Сохранить draft" : "Save draft"}
-                      </button>
-                      <button
-                        className="button button-primary"
-                        onClick={() => void copyText(buildBugDraft(state, locale), "notice.bugCopied")}
-                      >
-                        {t("action.copyBug")}
-                      </button>
-                      <button
-                        className="button button-secondary"
-                        onClick={() =>
-                          downloadFile(
-                            buildBugDraft(state, locale),
-                            `qa-buddy-bug-${state.sessionId ?? "draft"}.md`,
-                            "text/markdown"
-                          )
-                        }
-                      >
-                        Markdown
-                      </button>
-                      <button className="button button-secondary" onClick={() => downloadSession(state)}>
-                        {t("action.exportJson")}
-                      </button>
-                      <button className="button button-ghost" onClick={() => void run("CLEAR_SESSION")}>
-                        {t("action.clear")}
+                        <label>
+                          <span>Название</span>
+                          <input value={state.testCase.title} onChange={(event) => updateTestCaseField("title", event.target.value)} onBlur={() => void saveTestCase()} />
+                        </label>
+
+                        <div className="field-grid">
+                          <label>
+                            <span>Module / Feature</span>
+                            <input value={state.testCase.module} onChange={(event) => updateTestCaseField("module", event.target.value)} onBlur={() => void saveTestCase()} />
+                          </label>
+                          <label>
+                            <span>Type</span>
+                            <select value={state.testCase.caseType} onChange={(event) => updateTestCaseField("caseType", event.target.value)} onBlur={() => void saveTestCase()}>
+                              <option>Positive</option>
+                              <option>Negative</option>
+                              <option>Edge</option>
+                            </select>
+                          </label>
+                        </div>
+
+                        <label>
+                          <span>Предусловия</span>
+                          <textarea value={state.testCase.preconditions} onChange={(event) => updateTestCaseField("preconditions", event.target.value)} onBlur={() => void saveTestCase()} />
+                        </label>
+
+                        <label>
+                          <span>Тестовые данные</span>
+                          <textarea value={state.testCase.testData} onChange={(event) => updateTestCaseField("testData", event.target.value)} onBlur={() => void saveTestCase()} />
+                        </label>
+
+                        <label>
+                          <span>Шаги</span>
+                          <textarea
+                            value={state.testCase.steps.join("\n")}
+                            onChange={(event) => updateTestCaseField("steps", event.target.value.split("\n").filter(Boolean))}
+                            onBlur={() => void saveTestCase()}
+                          />
+                        </label>
+
+                        <label>
+                          <span>Ожидаемый результат</span>
+                          <textarea value={state.testCase.expectedResult} onChange={(event) => updateTestCaseField("expectedResult", event.target.value)} onBlur={() => void saveTestCase()} />
+                        </label>
+
+                        <div className="field-grid">
+                          <label>
+                            <span>Priority</span>
+                            <select value={state.testCase.priority} onChange={(event) => updateTestCaseField("priority", event.target.value)} onBlur={() => void saveTestCase()}>
+                              <option>High</option>
+                              <option>Medium</option>
+                              <option>Low</option>
+                            </select>
+                          </label>
+                          <label>
+                            <span>Tags</span>
+                            <input value={state.testCase.tags} onChange={(event) => updateTestCaseField("tags", event.target.value)} onBlur={() => void saveTestCase()} placeholder="smoke, auth, regression" />
+                          </label>
+                        </div>
+
+                        <div className="builder-actions">
+                          <button className="button button-primary" onClick={() => void copyText(buildTestCaseDraft(state), "Test Case скопирован")}>
+                            Скопировать
+                          </button>
+                          <button className="button button-secondary" onClick={() => downloadFile(buildTestCaseDraft(state), `qa-buddy-test-case-${state.sessionId}.md`, "text/markdown")}>
+                            Markdown
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {builderMode === "checklist" && (
+                      <div className="builder-card">
+                        <div className="builder-head">
+                          <div>
+                            <p className="eyebrow">CHECKLIST</p>
+                            <h2>Checklist Builder</h2>
+                          </div>
+                          <button className="link-button" onClick={() => void addChecklistItem()}>
+                            + пункт
+                          </button>
+                        </div>
+
+                        <label>
+                          <span>Название</span>
+                          <input
+                            value={state.checklist.title}
+                            onChange={(event) =>
+                              setState((current) => ({
+                                ...current,
+                                checklist: {
+                                  ...current.checklist,
+                                  title: event.target.value,
+                                },
+                              }))
+                            }
+                            onBlur={() => void updateChecklist(state.checklist)}
+                          />
+                        </label>
+
+                        <div className="checklist-items">
+                          {state.checklist.items.map((item) => (
+                            <label className="checklist-item" key={item.id}>
+                              <input
+                                type="checkbox"
+                                checked={item.checked}
+                                onChange={(event) =>
+                                  void updateChecklist({
+                                    ...state.checklist,
+                                    items: state.checklist.items.map((current) =>
+                                      current.id === item.id
+                                        ? { ...current, checked: event.target.checked }
+                                        : current
+                                    ),
+                                  })
+                                }
+                              />
+                              <span>{item.text}</span>
+                              <button
+                                type="button"
+                                className="mini-button danger"
+                                onClick={() =>
+                                  void updateChecklist({
+                                    ...state.checklist,
+                                    items: state.checklist.items.filter((current) => current.id !== item.id),
+                                  })
+                                }
+                              >
+                                ×
+                              </button>
+                            </label>
+                          ))}
+                        </div>
+
+                        <div className="builder-actions">
+                          <button className="button button-primary" onClick={() => void copyText(buildChecklistDraft(state), "Checklist скопирован")}>
+                            Скопировать
+                          </button>
+                          <button className="button button-secondary" onClick={() => downloadFile(buildChecklistDraft(state), `qa-buddy-checklist-${state.sessionId}.md`, "text/markdown")}>
+                            Markdown
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="draft-toolbar">
+                      <button onClick={() => void rebuildBuilder()}>↻ Пересобрать draft</button>
+                      <button onClick={() => void resetBuilder()}>Сбросить draft</button>
+                      <button onClick={() => downloadFile(JSON.stringify(state, null, 2), `qa-buddy-session-${state.sessionId}.json`, "application/json")}>
+                        Экспорт JSON
                       </button>
                     </div>
                   </>
                 )}
-                  </>
-                )}
+              </>
+            )}
           </div>
         )}
 
         {activeTab === "steps" && (
           <div className="panel">
             <div className="section-heading">
-              <h2>{t("steps.title")}</h2>
+              <h2>Все шаги</h2>
               <button className="link-button" onClick={() => void addManualStep()} disabled={!state.sessionId}>
-                {t("action.addManual")}
+                + Добавить вручную
               </button>
             </div>
 
             {state.steps.length === 0 ? (
-              <div className="empty-state">{t("steps.empty")}</div>
+              <div className="empty-state">Шагов пока нет.</div>
             ) : (
               <ol className="step-list">
                 {state.steps.map((step, index) => (
@@ -619,21 +1080,13 @@ function App() {
                     <span className="step-index">{index + 1}</span>
                     <div className="row-main">
                       <strong>{step.label}</strong>
-                      <small>
-                        {new Date(step.timestamp).toLocaleTimeString(locale === "ru" ? "ru-RU" : "en-US")} · {safeUrl(step.url)?.hostname ?? "manual"}
-                      </small>
+                      <small>{formatClock(step.timestamp)} · {safeUrl(step.url)?.hostname ?? "manual"}</small>
                       {step.note && <em>{step.note}</em>}
                     </div>
                     <div className="row-actions">
-                      <button
-                        title={t("action.important")}
-                        className={step.important ? "mini-button active" : "mini-button"}
-                        onClick={() => void run("UPDATE_STEP", { stepId: step.id, important: !step.important })}
-                      >
-                        ★
-                      </button>
-                      <button className="mini-button" title={t("action.note")} onClick={() => void addNote(step)}>✎</button>
-                      <button className="mini-button danger" title={t("action.delete")} onClick={() => void run("UPDATE_STEP", { stepId: step.id, delete: true })}>×</button>
+                      <button className={step.important ? "mini-button active" : "mini-button"} onClick={() => void run("UPDATE_STEP", { stepId: step.id, important: !step.important })}>★</button>
+                      <button className="mini-button" onClick={() => void addStepNote(step)}>✎</button>
+                      <button className="mini-button danger" onClick={() => void run("UPDATE_STEP", { stepId: step.id, delete: true })}>×</button>
                     </div>
                   </li>
                 ))}
@@ -645,7 +1098,7 @@ function App() {
         {activeTab === "network" && (
           <div className="panel">
             <div className="section-heading">
-              <h2>{t("network.title")}</h2>
+              <h2>Network evidence</h2>
               <div className="filter-row">
                 {(["all", "4xx", "5xx", "err", "slow"] as NetworkFilter[]).map((filter) => (
                   <button
@@ -653,40 +1106,36 @@ function App() {
                     className={networkFilter === filter ? "filter active" : "filter"}
                     onClick={() => setNetworkFilter(filter)}
                   >
-                    {t(`filter.${filter}` as Parameters<typeof translate>[1])}
+                    {filter === "all" ? "Все" : filter.toUpperCase()}
                   </button>
                 ))}
               </div>
             </div>
 
             <div className="network-summary">
-              <span>{locale === "ru" ? "Порог slow" : "Slow threshold"} <strong>{state.settings.slowRequestThresholdMs} ms</strong></span>
-              <span>{locale === "ru" ? "Медленных" : "Slow"} <strong>{slowRequests}</strong></span>
+              <span>Slow threshold <strong>{state.settings.slowRequestThresholdMs} ms</strong></span>
+              <span>Slow <strong>{state.networkEvents.filter((event) => event.slow).length}</strong></span>
             </div>
 
             {filteredNetwork.length === 0 ? (
-              <div className="empty-state">{t("network.empty")}</div>
+              <div className="empty-state">Проблемных requests не зафиксировано.</div>
             ) : (
               <div className="evidence-list">
                 {filteredNetwork.map((event) => {
                   const url = safeUrl(event.url);
+
                   return (
                     <div className={event.slow ? "evidence-row slow" : "evidence-row"} key={event.id}>
                       <span className="evidence-code">{event.statusCode ?? "ERR"}</span>
                       <div className="row-main">
                         <strong>{event.method} {url?.pathname ?? event.url}</strong>
                         <small>
-                          {url?.hostname ?? event.error} · {formatClock(event.timestamp, locale)}
+                          {url?.hostname ?? event.error}
                           {typeof event.durationMs === "number" ? ` · ${event.durationMs} ms` : ""}
                           {event.resourceType ? ` · ${event.resourceType}` : ""}
                         </small>
-                        {event.slow && (
-                          <span className="slow-badge">
-                            {locale === "ru" ? "Медленный request" : "Slow request"}
-                          </span>
-                        )}
+                        {event.slow && <span className="slow-badge">Медленный request</span>}
                       </div>
-                      <button className="mini-button" onClick={() => void copyText(`${event.method} ${event.statusCode ?? event.error ?? "ERR"} ${event.url}`, "notice.copied")}>⧉</button>
                     </div>
                   );
                 })}
@@ -697,9 +1146,13 @@ function App() {
 
         {activeTab === "console" && (
           <div className="panel">
-            <div className="section-heading"><h2>{t("console.title")}</h2><span>{state.consoleEvents.length}</span></div>
+            <div className="section-heading">
+              <h2>Console evidence</h2>
+              <span>{state.consoleEvents.length}</span>
+            </div>
+
             {state.consoleEvents.length === 0 ? (
-              <div className="empty-state">{t("console.empty")}</div>
+              <div className="empty-state">JavaScript errors не зафиксированы.</div>
             ) : (
               <div className="evidence-list">
                 {state.consoleEvents.map((event) => (
@@ -709,7 +1162,6 @@ function App() {
                       <strong>{event.level}</strong>
                       <small>{event.message}</small>
                     </div>
-                    <button className="mini-button" onClick={() => void copyText(event.message, "notice.copied")}>⧉</button>
                   </div>
                 ))}
               </div>
@@ -719,31 +1171,38 @@ function App() {
 
         {activeTab === "screenshots" && (
           <div className="panel">
-            <div className="section-heading"><h2>{t("screenshots.title")}</h2><span>{state.screenshots.length}/5</span></div>
+            <div className="section-heading">
+              <h2>Скриншоты</h2>
+              <span>{state.screenshots.length}/5</span>
+            </div>
+
             {state.screenshots.length === 0 ? (
-              <div className="empty-state">{t("screenshots.empty")}</div>
+              <div className="empty-state">Скриншотов пока нет.</div>
             ) : (
               <div className="screenshot-grid">
-                {state.screenshots.map((shot) => (
-                  <article className={shot.attached === false ? "shot detached" : "shot"} key={shot.id}>
-                    <a href={shot.dataUrl} target="_blank" rel="noreferrer">
-                      <img src={shot.dataUrl} alt={`Screenshot ${formatClock(shot.timestamp, locale)}`} />
-                    </a>
-                    <div className="shot-meta">
-                      <span>{formatClock(shot.timestamp, locale)}</span>
-                      <div>
-                        <button
-                          className={shot.attached === false ? "mini-button" : "mini-button active"}
-                          title={shot.attached === false ? t("action.attach") : t("action.detach")}
-                          onClick={() => void run("UPDATE_SCREENSHOT", { screenshotId: shot.id, attached: shot.attached === false })}
-                        >
-                          ✓
-                        </button>
-                        <button className="mini-button danger" title={t("action.delete")} onClick={() => void run("UPDATE_SCREENSHOT", { screenshotId: shot.id, delete: true })}>×</button>
+                {state.screenshots.map((shot) => {
+                  const linkedIndex = shot.stepId
+                    ? state.steps.findIndex((step) => step.id === shot.stepId)
+                    : -1;
+
+                  return (
+                    <article className={shot.attached === false ? "shot detached" : "shot"} key={shot.id}>
+                      <a href={shot.dataUrl} target="_blank" rel="noreferrer">
+                        <img src={shot.dataUrl} alt={`Screenshot ${formatClock(shot.timestamp)}`} />
+                      </a>
+                      <div className="shot-meta">
+                        <span>
+                          {formatClock(shot.timestamp)}
+                          {linkedIndex >= 0 ? ` · step #${linkedIndex + 1}` : ""}
+                        </span>
+                        <div>
+                          <button className={shot.attached === false ? "mini-button" : "mini-button active"} onClick={() => void run("UPDATE_SCREENSHOT", { screenshotId: shot.id, attached: shot.attached === false })}>✓</button>
+                          <button className="mini-button danger" onClick={() => void run("UPDATE_SCREENSHOT", { screenshotId: shot.id, delete: true })}>×</button>
+                        </div>
                       </div>
-                    </div>
-                  </article>
-                ))}
+                    </article>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -752,35 +1211,18 @@ function App() {
         {activeTab === "settings" && (
           <div className="panel settings-panel">
             <div className="section-heading">
-              <h2>{locale === "ru" ? "Настройки Recorder" : "Recorder settings"}</h2>
-              <span>v0.3</span>
+              <h2>Настройки Recorder</h2>
+              <span>v0.3.1</span>
             </div>
-
-            <section className="settings-section">
-              <div>
-                <strong>{locale === "ru" ? "Язык интерфейса" : "Interface language"}</strong>
-                <small>{locale === "ru" ? "Русский используется по умолчанию" : "Russian is used by default"}</small>
-              </div>
-              <div className="segmented-control">
-                <button className={locale === "ru" ? "active" : ""} onClick={() => void setLocale("ru")}>RU</button>
-                <button className={locale === "en" ? "active" : ""} onClick={() => void setLocale("en")}>EN</button>
-              </div>
-            </section>
 
             <section className="settings-section settings-threshold">
               <div>
-                <strong>{locale === "ru" ? "Slow request threshold" : "Slow request threshold"}</strong>
-                <small>
-                  {locale === "ru"
-                    ? "Успешные requests медленнее порога попадут в Network evidence"
-                    : "Successful requests slower than this threshold are added to Network evidence"}
-                </small>
+                <strong>Slow request threshold</strong>
+                <small>Успешные requests медленнее порога попадут в Network evidence.</small>
               </div>
               <select
                 value={state.settings.slowRequestThresholdMs}
-                onChange={(event) =>
-                  void updateSetting({ slowRequestThresholdMs: Number(event.target.value) })
-                }
+                onChange={(event) => void updateSetting({ slowRequestThresholdMs: Number(event.target.value) })}
               >
                 <option value={1000}>1 000 ms</option>
                 <option value={1500}>1 500 ms</option>
@@ -792,49 +1234,35 @@ function App() {
 
             <section className="settings-options">
               <label>
-                <input
-                  type="checkbox"
-                  checked={state.settings.mascotEnabled}
-                  onChange={(event) => void updateSetting({ mascotEnabled: event.target.checked })}
-                />
+                <input type="checkbox" checked={state.settings.mascotEnabled} onChange={(event) => void updateSetting({ mascotEnabled: event.target.checked })} />
                 <span>
-                  <strong>{locale === "ru" ? "Показывать pixel-кота" : "Show pixel cat"}</strong>
-                  <small>{locale === "ru" ? "Mascot работает локально и не влияет на запись" : "Mascot is local-only and does not affect recording"}</small>
+                  <strong>Показывать pixel-кота</strong>
+                  <small>Можно перетащить мышкой. Double click вернёт позицию.</small>
                 </span>
               </label>
 
               <label>
-                <input
-                  type="checkbox"
-                  checked={state.settings.reducedMotion}
-                  onChange={(event) => void updateSetting({ reducedMotion: event.target.checked })}
-                />
+                <input type="checkbox" checked={state.settings.reducedMotion} onChange={(event) => void updateSetting({ reducedMotion: event.target.checked })} />
                 <span>
-                  <strong>{locale === "ru" ? "Уменьшить анимации" : "Reduced motion"}</strong>
-                  <small>{locale === "ru" ? "Отключает активные mascot animations" : "Disables active mascot animations"}</small>
+                  <strong>Уменьшить анимации</strong>
+                  <small>Отключает активные mascot animations.</small>
                 </span>
               </label>
 
               <label>
-                <input
-                  type="checkbox"
-                  checked={state.settings.funMode}
-                  disabled={!state.settings.mascotEnabled}
-                  onChange={(event) => void updateSetting({ funMode: event.target.checked })}
-                />
+                <input type="checkbox" checked={state.settings.funMode} disabled={!state.settings.mascotEnabled} onChange={(event) => void updateSetting({ funMode: event.target.checked })} />
                 <span>
                   <strong>Fun mode</strong>
-                  <small>{locale === "ru" ? "Добавляет редкую анимацию с лотком" : "Adds the rare litter-box animation"}</small>
+                  <small>Добавляет редкую анимацию с лотком.</small>
                 </span>
               </label>
             </section>
 
             <aside className="settings-privacy">
-              <strong>Privacy</strong>
+              <strong>Хранение данных</strong>
               <p>
-                {locale === "ru"
-                  ? "Input values не сохраняются. Screenshots создаются только по явному действию. Network и Console evidence остаются локально."
-                  : "Input values are not stored. Screenshots are explicit-only. Network and Console evidence stays local."}
+                Steps, Network/Console metadata и screenshots хранятся локально в chrome.storage.local.
+                Ничего не отправляется на backend.
               </p>
             </aside>
           </div>
@@ -843,7 +1271,10 @@ function App() {
 
       <aside className="privacy-note">
         <span aria-hidden="true">🛡</span>
-        <p><strong>{t("privacy.title")}</strong> {t("privacy.text")}</p>
+        <p>
+          <strong>Privacy first.</strong> Значения input-полей не записываются.
+          Sensitive query params маскируются. Screenshots создаются только вручную.
+        </p>
       </aside>
 
       <Mascot
@@ -851,6 +1282,10 @@ function App() {
         reducedMotion={state.settings.reducedMotion}
         funMode={state.settings.funMode}
         recording={state.status === "recording"}
+        position={state.settings.mascotPosition}
+        onPositionChange={(mascotPosition) =>
+          void updateSetting({ mascotPosition })
+        }
       />
 
       {notice && <p className="notice">{notice}</p>}
@@ -858,5 +1293,3 @@ function App() {
     </main>
   );
 }
-
-export default App;
