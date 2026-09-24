@@ -18,6 +18,9 @@ type RecorderNetworkEvent = {
   statusCode?: number;
   error?: string;
   timestamp: number;
+  durationMs?: number;
+  slow?: boolean;
+  resourceType?: string;
 };
 
 type RecorderConsoleEvent = {
@@ -49,6 +52,7 @@ type RecorderSettings = {
   mascotEnabled: boolean;
   reducedMotion: boolean;
   funMode: boolean;
+  slowRequestThresholdMs: number;
 };
 
 type RecorderState = {

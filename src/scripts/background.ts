@@ -5,12 +5,14 @@
   const MAX_CONSOLE_EVENTS = 50;
   const MAX_SCREENSHOTS = 5;
   const SENSITIVE_QUERY_KEY = /(token|auth|key|secret|password|session|code)/i;
+  const requestStartedAt = new Map<string, number>();
 
   const defaultSettings = (): RecorderSettings => ({
     locale: "ru",
     mascotEnabled: true,
     reducedMotion: false,
     funMode: false,
+    slowRequestThresholdMs: 2000,
   });
 
   const defaultBugReport = (): BugReportDraft => ({
@@ -404,7 +406,14 @@
     message: { settings?: Partial<RecorderSettings> }
   ): Promise<RecorderState> {
     const state = await loadState();
-    state.settings = { ...state.settings, ...(message.settings ?? {}) };
+    const next = { ...state.settings, ...(message.settings ?? {}) };
+
+    const threshold = Number(next.slowRequestThresholdMs);
+    next.slowRequestThresholdMs = Number.isFinite(threshold)
+      ? Math.min(30000, Math.max(250, Math.round(threshold)))
+      : 2000;
+
+    state.settings = next;
     await saveState(state);
     notifyTarget(state);
     return state;
@@ -439,22 +448,56 @@
     await saveState(state);
   }
 
+  chrome.webRequest.onBeforeRequest.addListener(
+    (details) => {
+      if (details.tabId < 0 || !/^https?:/i.test(details.url)) return;
+
+      if (requestStartedAt.size > 2000) {
+        requestStartedAt.clear();
+      }
+
+      requestStartedAt.set(details.requestId, details.timeStamp);
+    },
+    { urls: ["<all_urls>"] }
+  );
+
   chrome.webRequest.onCompleted.addListener(
     (details) => {
-      if (
-        details.tabId < 0 ||
-        details.statusCode < 400 ||
-        !/^https?:/i.test(details.url)
-      ) return;
+      if (details.tabId < 0 || !/^https?:/i.test(details.url)) return;
 
-      void appendNetworkEvent(
-        {
-          method: details.method,
-          url: details.url,
-          statusCode: details.statusCode,
-        },
-        details.tabId
-      );
+      const startedAt = requestStartedAt.get(details.requestId);
+      requestStartedAt.delete(details.requestId);
+      const durationMs =
+        typeof startedAt === "number"
+          ? Math.max(0, Math.round(details.timeStamp - startedAt))
+          : undefined;
+
+      void loadState().then((state) => {
+        if (
+          state.status !== "recording" ||
+          state.targetTabId !== details.tabId
+        ) {
+          return;
+        }
+
+        const slow =
+          typeof durationMs === "number" &&
+          durationMs >= state.settings.slowRequestThresholdMs;
+
+        if (details.statusCode < 400 && !slow) return;
+
+        return appendNetworkEvent(
+          {
+            method: details.method,
+            url: details.url,
+            statusCode: details.statusCode,
+            durationMs,
+            slow,
+            resourceType: String(details.type),
+          },
+          details.tabId
+        );
+      });
     },
     { urls: ["<all_urls>"] }
   );
@@ -465,13 +508,25 @@
         details.tabId < 0 ||
         details.error === "net::ERR_ABORTED" ||
         !/^https?:/i.test(details.url)
-      ) return;
+      ) {
+        return;
+      }
+
+      const startedAt = requestStartedAt.get(details.requestId);
+      requestStartedAt.delete(details.requestId);
+      const durationMs =
+        typeof startedAt === "number"
+          ? Math.max(0, Math.round(details.timeStamp - startedAt))
+          : undefined;
 
       void appendNetworkEvent(
         {
           method: details.method,
           url: details.url,
           error: details.error,
+          durationMs,
+          slow: false,
+          resourceType: String(details.type),
         },
         details.tabId
       );

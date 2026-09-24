@@ -3,8 +3,8 @@ import { translate, type Locale } from "../i18n";
 import Mascot from "../mascot/Mascot";
 
 type RecorderStatus = "idle" | "recording" | "paused" | "stopped";
-type TabId = "summary" | "steps" | "network" | "console" | "screenshots";
-type NetworkFilter = "all" | "4xx" | "5xx" | "err";
+type TabId = "summary" | "steps" | "network" | "console" | "screenshots" | "settings";
+type NetworkFilter = "all" | "4xx" | "5xx" | "err" | "slow";
 
 type RecorderStep = {
   id: string;
@@ -23,6 +23,9 @@ type RecorderNetworkEvent = {
   statusCode?: number;
   error?: string;
   timestamp: number;
+  durationMs?: number;
+  slow?: boolean;
+  resourceType?: string;
 };
 
 type RecorderConsoleEvent = {
@@ -46,6 +49,7 @@ type RecorderSettings = {
   mascotEnabled: boolean;
   reducedMotion: boolean;
   funMode: boolean;
+  slowRequestThresholdMs: number;
 };
 
 type BugReportDraft = {
@@ -98,6 +102,7 @@ const emptyState: RecorderState = {
     mascotEnabled: true,
     reducedMotion: false,
     funMode: false,
+    slowRequestThresholdMs: 2000,
   },
 };
 
@@ -180,7 +185,11 @@ function buildBugDraft(state: RecorderState, locale: Locale) {
           .slice(-10)
           .map(
             (event) =>
-              `- ${event.method} ${event.statusCode ?? event.error ?? "ERR"} ${event.url}`
+              `- ${event.method} ${event.statusCode ?? event.error ?? "ERR"} ${event.url}${
+                typeof event.durationMs === "number"
+                  ? ` · ${event.durationMs} ms${event.slow ? " · SLOW" : ""}`
+                  : ""
+              }`
           )
           .join("\n")
       : ru
@@ -303,10 +312,13 @@ function App() {
   const filteredNetwork = state.networkEvents.filter((event) => {
     if (networkFilter === "all") return true;
     if (networkFilter === "err") return Boolean(event.error);
+    if (networkFilter === "slow") return Boolean(event.slow);
     if (networkFilter === "4xx")
       return Boolean(event.statusCode && event.statusCode >= 400 && event.statusCode < 500);
     return Boolean(event.statusCode && event.statusCode >= 500);
   });
+
+  const slowRequests = state.networkEvents.filter((event) => event.slow).length;
 
   const run = async (
     type: string,
@@ -383,6 +395,7 @@ function App() {
     { id: "network", label: t("tab.network"), count: state.networkEvents.length },
     { id: "console", label: t("tab.console"), count: state.consoleEvents.length },
     { id: "screenshots", label: t("tab.screenshots"), count: state.screenshots.length },
+    { id: "settings", label: t("tab.settings") },
   ];
 
   const statusLabel =
@@ -486,9 +499,18 @@ function App() {
                 {state.status === "stopped" && (
                   <>
                     <div className="bug-builder">
-                      <div className="section-heading">
-                        <h2>{locale === "ru" ? "Bug Report Builder" : "Bug Report Builder"}</h2>
-                        <span>{locale === "ru" ? "редактируемый draft" : "editable draft"}</span>
+                      <div className="bug-builder-head">
+                        <div>
+                          <p className="eyebrow">BUG REPORT</p>
+                          <h2>Bug Report Builder</h2>
+                          <small>{locale === "ru" ? "Проверь draft перед экспортом" : "Review the draft before export"}</small>
+                        </div>
+                        <div className="evidence-chips">
+                          <span>👣 {state.steps.length}</span>
+                          <span>🌐 {state.networkEvents.length}</span>
+                          <span>⚠ {state.consoleEvents.length}</span>
+                          <span>📸 {state.screenshots.filter((item) => item.attached !== false).length}</span>
+                        </div>
                       </div>
 
                       <label>
@@ -511,7 +533,7 @@ function App() {
                         />
                       </label>
 
-                      <div className="bug-grid">
+                      <div className="bug-results-stack">
                         <label>
                           <span>{locale === "ru" ? "Фактический результат" : "Actual result"}</span>
                           <textarea
@@ -542,6 +564,12 @@ function App() {
 
                     <div className="result-actions">
                       <button
+                        className="button button-secondary"
+                        onClick={() => void persistBugReport()}
+                      >
+                        {locale === "ru" ? "Сохранить draft" : "Save draft"}
+                      </button>
+                      <button
                         className="button button-primary"
                         onClick={() => void copyText(buildBugDraft(state, locale), "notice.bugCopied")}
                       >
@@ -568,39 +596,8 @@ function App() {
                     </div>
                   </>
                 )}
-
-                <div className="settings-card">
-                  <div>
-                    <strong>{locale === "ru" ? "Mascot" : "Mascot"}</strong>
-                    <small>{locale === "ru" ? "Лёгкий pixel-cat assistant" : "Lightweight pixel-cat assistant"}</small>
-                  </div>
-                  <label className="setting-toggle">
-                    <input
-                      type="checkbox"
-                      checked={state.settings.mascotEnabled}
-                      onChange={(event) => void updateSetting({ mascotEnabled: event.target.checked })}
-                    />
-                    <span>{locale === "ru" ? "Показывать" : "Show"}</span>
-                  </label>
-                  <label className="setting-toggle">
-                    <input
-                      type="checkbox"
-                      checked={state.settings.reducedMotion}
-                      onChange={(event) => void updateSetting({ reducedMotion: event.target.checked })}
-                    />
-                    <span>{locale === "ru" ? "Меньше анимаций" : "Reduced motion"}</span>
-                  </label>
-                  <label className="setting-toggle">
-                    <input
-                      type="checkbox"
-                      checked={state.settings.funMode}
-                      onChange={(event) => void updateSetting({ funMode: event.target.checked })}
-                    />
-                    <span>{locale === "ru" ? "Fun mode" : "Fun mode"}</span>
-                  </label>
-                </div>
-              </>
-            )}
+                  </>
+                )}
           </div>
         )}
 
@@ -650,7 +647,7 @@ function App() {
             <div className="section-heading">
               <h2>{t("network.title")}</h2>
               <div className="filter-row">
-                {(["all", "4xx", "5xx", "err"] as NetworkFilter[]).map((filter) => (
+                {(["all", "4xx", "5xx", "err", "slow"] as NetworkFilter[]).map((filter) => (
                   <button
                     key={filter}
                     className={networkFilter === filter ? "filter active" : "filter"}
@@ -662,6 +659,11 @@ function App() {
               </div>
             </div>
 
+            <div className="network-summary">
+              <span>{locale === "ru" ? "Порог slow" : "Slow threshold"} <strong>{state.settings.slowRequestThresholdMs} ms</strong></span>
+              <span>{locale === "ru" ? "Медленных" : "Slow"} <strong>{slowRequests}</strong></span>
+            </div>
+
             {filteredNetwork.length === 0 ? (
               <div className="empty-state">{t("network.empty")}</div>
             ) : (
@@ -669,11 +671,20 @@ function App() {
                 {filteredNetwork.map((event) => {
                   const url = safeUrl(event.url);
                   return (
-                    <div className="evidence-row" key={event.id}>
+                    <div className={event.slow ? "evidence-row slow" : "evidence-row"} key={event.id}>
                       <span className="evidence-code">{event.statusCode ?? "ERR"}</span>
                       <div className="row-main">
                         <strong>{event.method} {url?.pathname ?? event.url}</strong>
-                        <small>{url?.hostname ?? event.error} · {formatClock(event.timestamp, locale)}</small>
+                        <small>
+                          {url?.hostname ?? event.error} · {formatClock(event.timestamp, locale)}
+                          {typeof event.durationMs === "number" ? ` · ${event.durationMs} ms` : ""}
+                          {event.resourceType ? ` · ${event.resourceType}` : ""}
+                        </small>
+                        {event.slow && (
+                          <span className="slow-badge">
+                            {locale === "ru" ? "Медленный request" : "Slow request"}
+                          </span>
+                        )}
                       </div>
                       <button className="mini-button" onClick={() => void copyText(`${event.method} ${event.statusCode ?? event.error ?? "ERR"} ${event.url}`, "notice.copied")}>⧉</button>
                     </div>
@@ -735,6 +746,97 @@ function App() {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {activeTab === "settings" && (
+          <div className="panel settings-panel">
+            <div className="section-heading">
+              <h2>{locale === "ru" ? "Настройки Recorder" : "Recorder settings"}</h2>
+              <span>v0.3</span>
+            </div>
+
+            <section className="settings-section">
+              <div>
+                <strong>{locale === "ru" ? "Язык интерфейса" : "Interface language"}</strong>
+                <small>{locale === "ru" ? "Русский используется по умолчанию" : "Russian is used by default"}</small>
+              </div>
+              <div className="segmented-control">
+                <button className={locale === "ru" ? "active" : ""} onClick={() => void setLocale("ru")}>RU</button>
+                <button className={locale === "en" ? "active" : ""} onClick={() => void setLocale("en")}>EN</button>
+              </div>
+            </section>
+
+            <section className="settings-section settings-threshold">
+              <div>
+                <strong>{locale === "ru" ? "Slow request threshold" : "Slow request threshold"}</strong>
+                <small>
+                  {locale === "ru"
+                    ? "Успешные requests медленнее порога попадут в Network evidence"
+                    : "Successful requests slower than this threshold are added to Network evidence"}
+                </small>
+              </div>
+              <select
+                value={state.settings.slowRequestThresholdMs}
+                onChange={(event) =>
+                  void updateSetting({ slowRequestThresholdMs: Number(event.target.value) })
+                }
+              >
+                <option value={1000}>1 000 ms</option>
+                <option value={1500}>1 500 ms</option>
+                <option value={2000}>2 000 ms</option>
+                <option value={3000}>3 000 ms</option>
+                <option value={5000}>5 000 ms</option>
+              </select>
+            </section>
+
+            <section className="settings-options">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={state.settings.mascotEnabled}
+                  onChange={(event) => void updateSetting({ mascotEnabled: event.target.checked })}
+                />
+                <span>
+                  <strong>{locale === "ru" ? "Показывать pixel-кота" : "Show pixel cat"}</strong>
+                  <small>{locale === "ru" ? "Mascot работает локально и не влияет на запись" : "Mascot is local-only and does not affect recording"}</small>
+                </span>
+              </label>
+
+              <label>
+                <input
+                  type="checkbox"
+                  checked={state.settings.reducedMotion}
+                  onChange={(event) => void updateSetting({ reducedMotion: event.target.checked })}
+                />
+                <span>
+                  <strong>{locale === "ru" ? "Уменьшить анимации" : "Reduced motion"}</strong>
+                  <small>{locale === "ru" ? "Отключает активные mascot animations" : "Disables active mascot animations"}</small>
+                </span>
+              </label>
+
+              <label>
+                <input
+                  type="checkbox"
+                  checked={state.settings.funMode}
+                  disabled={!state.settings.mascotEnabled}
+                  onChange={(event) => void updateSetting({ funMode: event.target.checked })}
+                />
+                <span>
+                  <strong>Fun mode</strong>
+                  <small>{locale === "ru" ? "Добавляет редкую анимацию с лотком" : "Adds the rare litter-box animation"}</small>
+                </span>
+              </label>
+            </section>
+
+            <aside className="settings-privacy">
+              <strong>Privacy</strong>
+              <p>
+                {locale === "ru"
+                  ? "Input values не сохраняются. Screenshots создаются только по явному действию. Network и Console evidence остаются локально."
+                  : "Input values are not stored. Screenshots are explicit-only. Network and Console evidence stays local."}
+              </p>
+            </aside>
           </div>
         )}
       </section>
