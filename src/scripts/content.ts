@@ -9,6 +9,10 @@
     return state?.status === "recording" || state?.status === "paused";
   }
 
+  function ru() {
+    return state?.settings.locale !== "en";
+  }
+
   function describeElement(element: Element): string {
     const aria = element.getAttribute("aria-label")?.trim();
     const title = element.getAttribute("title")?.trim();
@@ -46,7 +50,6 @@
     url = location.href
   ) {
     if (state?.status !== "recording") return;
-
     void chrome.runtime.sendMessage({
       type: "RECORDER_EVENT",
       step: { type, label, url },
@@ -128,55 +131,17 @@
             font-size: 21px;
           }
           .title { min-width: 0; }
-          .name {
-            display: block;
-            overflow: hidden;
-            color: #f8fafc;
-            font-size: 13px;
-            font-weight: 800;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-          }
-          .meta {
-            display: flex;
-            align-items: center;
-            gap: 7px;
-            margin-top: 4px;
-            color: #94a3b8;
-            font-size: 10px;
-          }
-          .dot {
-            width: 7px;
-            height: 7px;
-            border-radius: 999px;
-            background: #fb7185;
-            box-shadow: 0 0 0 4px rgba(251, 113, 133, .1);
-          }
-          .paused .dot {
-            background: #facc15;
-            box-shadow: 0 0 0 4px rgba(250, 204, 21, .1);
-          }
+          .name { display:block; color:#f8fafc; font-size:13px; font-weight:800; }
+          .meta { display:flex; align-items:center; gap:7px; margin-top:4px; color:#94a3b8; font-size:10px; }
+          .dot { width:7px; height:7px; border-radius:999px; background:#fb7185; box-shadow:0 0 0 4px rgba(251,113,133,.1); }
+          .paused .dot { background:#facc15; box-shadow:0 0 0 4px rgba(250,204,21,.1); }
           button {
-            width: 38px;
-            height: 38px;
-            display: grid;
-            place-items: center;
-            cursor: pointer;
-            border: 1px solid #334155;
-            border-radius: 12px;
-            color: #cbd5e1;
-            background: #0f172a;
-            font: inherit;
-            font-weight: 900;
+            width:38px; height:38px; display:grid; place-items:center; cursor:pointer;
+            border:1px solid #334155; border-radius:12px; color:#cbd5e1; background:#0f172a;
+            font:inherit; font-weight:900;
           }
-          button:hover {
-            border-color: #22d3ee;
-            color: #67e8f9;
-          }
-          .stop:hover {
-            border-color: #fb7185;
-            color: #fca5a5;
-          }
+          button:hover { border-color:#22d3ee; color:#67e8f9; }
+          .stop:hover { border-color:#fb7185; color:#fca5a5; }
         </style>
         <div class="bar">
           <div class="cat" aria-hidden="true">🐱</div>
@@ -186,14 +151,14 @@
               <span class="dot"></span>
               <span data-status>REC</span>
               <span>•</span>
-              <span data-steps>0 steps</span>
+              <span data-steps>0</span>
               <span>•</span>
               <span data-time>00:00</span>
             </span>
           </div>
-          <button type="button" data-shot aria-label="Take screenshot">📸</button>
-          <button type="button" data-pause aria-label="Pause recording">Ⅱ</button>
-          <button type="button" class="stop" data-stop aria-label="Stop recording">■</button>
+          <button type="button" data-shot>📸</button>
+          <button type="button" data-pause>Ⅱ</button>
+          <button type="button" class="stop" data-stop>■</button>
         </div>
       `;
 
@@ -227,24 +192,34 @@
     const steps = shadow.querySelector("[data-steps]");
     const time = shadow.querySelector("[data-time]");
     const pause = shadow.querySelector("[data-pause]");
+    const shot = shadow.querySelector("[data-shot]");
+    const stop = shadow.querySelector("[data-stop]");
 
     bar?.classList.toggle("paused", state.status === "paused");
     if (status) {
-      status.textContent = state.status === "paused" ? "PAUSED" : "REC";
+      status.textContent =
+        state.status === "paused"
+          ? ru() ? "ПАУЗА" : "PAUSED"
+          : ru() ? "ЗАПИСЬ" : "REC";
     }
     if (steps) {
-      steps.textContent = `${state.steps.length} steps`;
+      steps.textContent = ru()
+        ? `${state.steps.length} шагов`
+        : `${state.steps.length} steps`;
     }
-    if (time) {
-      time.textContent = formatTime();
-    }
+    if (time) time.textContent = formatTime();
+
     if (pause) {
       pause.textContent = state.status === "paused" ? "▶" : "Ⅱ";
       pause.setAttribute(
         "aria-label",
-        state.status === "paused" ? "Resume recording" : "Pause recording"
+        state.status === "paused"
+          ? ru() ? "Продолжить запись" : "Resume recording"
+          : ru() ? "Поставить на паузу" : "Pause recording"
       );
     }
+    shot?.setAttribute("aria-label", ru() ? "Сделать скриншот" : "Take screenshot");
+    stop?.setAttribute("aria-label", ru() ? "Остановить запись" : "Stop recording");
   }
 
   document.addEventListener(
@@ -255,8 +230,8 @@
 
       const target = clickableTarget(event.target);
       if (!target) return;
-
-      sendStep("click", `Click "${describeElement(target)}"`);
+      const name = describeElement(target);
+      sendStep("click", ru() ? `Нажать «${name}»` : `Click "${name}"`);
     },
     true
   );
@@ -273,10 +248,13 @@
         target instanceof HTMLInputElement && target.type
           ? ` (${target.type})`
           : "";
+      const name = describeElement(target);
 
       sendStep(
         "input",
-        `Change field "${describeElement(target)}"${fieldType}`
+        ru()
+          ? `Изменить поле «${name}»${fieldType}`
+          : `Change field "${name}"${fieldType}`
       );
     },
     true
@@ -287,9 +265,7 @@
       event.source !== window ||
       state?.status !== "recording" ||
       event.data?.source !== "qa-buddy-recorder-page"
-    ) {
-      return;
-    }
+    ) return;
 
     const level = event.data.level as RecorderConsoleEvent["level"] | undefined;
     const message = event.data.message;
@@ -298,44 +274,37 @@
       !level ||
       !["error", "exception", "unhandledrejection"].includes(level) ||
       typeof message !== "string"
-    ) {
-      return;
-    }
+    ) return;
 
     void chrome.runtime.sendMessage({
       type: "RECORDER_CONSOLE",
-      consoleEvent: {
-        level,
-        message,
-        url: location.href,
-      },
+      consoleEvent: { level, message, url: location.href },
     });
   });
 
   window.setInterval(() => {
     if (location.href !== lastUrl) {
       lastUrl = location.href;
-
       if (state?.status === "recording") {
-        sendStep("page", `Navigate to ${location.pathname || "/"}`);
+        sendStep(
+          "page",
+          ru()
+            ? `Перейти на ${location.pathname || "/"}`
+            : `Navigate to ${location.pathname || "/"}`
+        );
       }
     }
-
-    if (active()) {
-      updateToolbar();
-    }
+    if (active()) updateToolbar();
   }, 800);
 
   chrome.runtime.onMessage.addListener((message) => {
     if (message?.type !== "STATE_UPDATED") return;
-
     state = message.state as RecorderState;
     ensureToolbar();
   });
 
   void chrome.runtime.sendMessage({ type: "GET_STATE" }).then((response) => {
     if (!response?.isTargetTab) return;
-
     state = response.state as RecorderState;
     ensureToolbar();
   });

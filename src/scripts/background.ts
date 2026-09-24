@@ -6,27 +6,58 @@
   const MAX_SCREENSHOTS = 5;
   const SENSITIVE_QUERY_KEY = /(token|auth|key|secret|password|session|code)/i;
 
+  const defaultSettings = (): RecorderSettings => ({
+    locale: "ru",
+    mascotEnabled: true,
+    reducedMotion: false,
+    funMode: false,
+  });
+
+  const defaultBugReport = (): BugReportDraft => ({
+    title: "",
+    preconditions: "",
+    actualResult: "",
+    expectedResult: "",
+    environment: "",
+  });
+
   const defaultState = (): RecorderState => ({
+    schemaVersion: 2,
     status: "idle",
     sessionId: null,
     targetTabId: null,
     startedAt: null,
+    finishedAt: null,
     pausedAt: null,
     accumulatedPausedMs: 0,
     steps: [],
     networkEvents: [],
     consoleEvents: [],
     screenshots: [],
+    bugReport: defaultBugReport(),
+    settings: defaultSettings(),
   });
 
   function normalizeState(raw?: Partial<RecorderState>): RecorderState {
+    const base = defaultState();
     return {
-      ...defaultState(),
+      ...base,
       ...raw,
-      steps: raw?.steps ?? [],
+      schemaVersion: 2,
+      steps: (raw?.steps ?? []).map((step) => ({
+        ...step,
+        note: step.note ?? "",
+        important: step.important ?? false,
+      })),
       networkEvents: raw?.networkEvents ?? [],
       consoleEvents: raw?.consoleEvents ?? [],
-      screenshots: raw?.screenshots ?? [],
+      screenshots: (raw?.screenshots ?? []).map((item) => ({
+        ...item,
+        attached: item.attached ?? true,
+      })),
+      bugReport: { ...base.bugReport, ...(raw?.bugReport ?? {}) },
+      settings: { ...base.settings, ...(raw?.settings ?? {}) },
+      finishedAt: raw?.finishedAt ?? null,
     };
   }
 
@@ -54,6 +85,16 @@
     }
   }
 
+  function pageLabel(url: string, locale: RecorderLocale): string {
+    try {
+      const parsed = new URL(url);
+      const target = `${parsed.hostname}${parsed.pathname === "/" ? "" : parsed.pathname}`;
+      return locale === "ru" ? `Открыть ${target}` : `Open ${target}`;
+    } catch {
+      return locale === "ru" ? "Открыть страницу" : "Open page";
+    }
+  }
+
   function makeStep(
     type: RecorderStep["type"],
     label: string,
@@ -65,16 +106,9 @@
       label: label.slice(0, 180),
       url: safeUrl(url),
       timestamp: Date.now(),
+      note: "",
+      important: false,
     };
-  }
-
-  function pageLabel(url: string): string {
-    try {
-      const parsed = new URL(url);
-      return `Open ${parsed.hostname}${parsed.pathname === "/" ? "" : parsed.pathname}`;
-    } catch {
-      return "Open page";
-    }
   }
 
   function contentState(state: RecorderState): RecorderState {
@@ -88,7 +122,6 @@
 
   function notifyTarget(state: RecorderState): void {
     if (state.targetTabId === null) return;
-
     chrome.tabs.sendMessage(
       state.targetTabId,
       { type: "STATE_UPDATED", state: contentState(state) },
@@ -97,13 +130,15 @@
   }
 
   async function startRecording(): Promise<RecorderState> {
-    const [tab] = await chrome.tabs.query({
-      active: true,
-      currentWindow: true,
-    });
+    const previous = await loadState();
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
     if (!tab?.id || !tab.url || !/^https?:/i.test(tab.url)) {
-      throw new Error("Open a regular http/https page before starting the recorder.");
+      throw new Error(
+        previous.settings.locale === "ru"
+          ? "Открой обычную http/https страницу перед запуском записи."
+          : "Open a regular http/https page before starting the recorder."
+      );
     }
 
     const now = Date.now();
@@ -113,7 +148,12 @@
       sessionId: crypto.randomUUID(),
       targetTabId: tab.id,
       startedAt: now,
-      steps: [makeStep("page", pageLabel(tab.url), tab.url)],
+      settings: previous.settings,
+      bugReport: {
+        ...defaultBugReport(),
+        environment: navigator.userAgent,
+      },
+      steps: [makeStep("page", pageLabel(tab.url, previous.settings.locale), tab.url)],
     };
 
     await saveState(state);
@@ -143,10 +183,9 @@
     const state = await loadState();
 
     if (state.status === "recording" || state.status === "paused") {
-      if (state.status === "recording") {
-        state.pausedAt = Date.now();
-      }
-
+      const now = Date.now();
+      if (state.status === "recording") state.pausedAt = now;
+      state.finishedAt = now;
       state.status = "stopped";
       await saveState(state);
       notifyTarget(state);
@@ -156,8 +195,11 @@
   }
 
   async function clearSession(): Promise<RecorderState> {
+    const previous = await loadState();
     const state = defaultState();
+    state.settings = previous.settings;
     await saveState(state);
+    notifyTarget(state);
     return state;
   }
 
@@ -201,6 +243,55 @@
     return state;
   }
 
+  async function addManualStep(message: { label?: string }): Promise<RecorderState> {
+    const state = await loadState();
+    if (!state.sessionId || !message.label?.trim()) return state;
+
+    let url = "";
+    if (state.targetTabId !== null) {
+      try {
+        const tab = await chrome.tabs.get(state.targetTabId);
+        url = tab.url ?? "";
+      } catch {
+        url = "";
+      }
+    }
+
+    state.steps = [
+      ...state.steps,
+      makeStep("manual", message.label.trim(), url),
+    ].slice(-MAX_STEPS);
+
+    await saveState(state);
+    notifyTarget(state);
+    return state;
+  }
+
+  async function updateStep(
+    message: { stepId?: string; note?: string; important?: boolean; delete?: boolean }
+  ): Promise<RecorderState> {
+    const state = await loadState();
+    if (!message.stepId) return state;
+
+    if (message.delete) {
+      state.steps = state.steps.filter((step) => step.id !== message.stepId);
+    } else {
+      state.steps = state.steps.map((step) =>
+        step.id === message.stepId
+          ? {
+              ...step,
+              note: message.note ?? step.note,
+              important: message.important ?? step.important,
+            }
+          : step
+      );
+    }
+
+    await saveState(state);
+    notifyTarget(state);
+    return state;
+  }
+
   async function addConsoleEvent(
     message: {
       consoleEvent?: {
@@ -224,15 +315,17 @@
       return state;
     }
 
-    const item: RecorderConsoleEvent = {
-      id: crypto.randomUUID(),
-      level: event.level,
-      message: event.message.slice(0, 500),
-      url: safeUrl(event.url ?? sender.tab.url ?? ""),
-      timestamp: Date.now(),
-    };
+    state.consoleEvents = [
+      ...state.consoleEvents,
+      {
+        id: crypto.randomUUID(),
+        level: event.level,
+        message: event.message.slice(0, 500),
+        url: safeUrl(event.url ?? sender.tab.url ?? ""),
+        timestamp: Date.now(),
+      },
+    ].slice(-MAX_CONSOLE_EVENTS);
 
-    state.consoleEvents = [...state.consoleEvents, item].slice(-MAX_CONSOLE_EVENTS);
     await saveState(state);
     return state;
   }
@@ -240,21 +333,29 @@
   async function captureScreenshot(): Promise<RecorderState> {
     const state = await loadState();
 
-    if (
-      state.status !== "recording" &&
-      state.status !== "paused"
-    ) {
-      throw new Error("Start a recording session before taking a screenshot.");
+    if (state.status !== "recording" && state.status !== "paused") {
+      throw new Error(
+        state.settings.locale === "ru"
+          ? "Сначала запусти запись."
+          : "Start a recording session first."
+      );
     }
 
     if (state.targetTabId === null) {
-      throw new Error("Recorded tab was not found.");
+      throw new Error(
+        state.settings.locale === "ru"
+          ? "Тестируемая вкладка не найдена."
+          : "Recorded tab was not found."
+      );
     }
 
     const tab = await chrome.tabs.get(state.targetTabId);
-
     if (!tab.active) {
-      throw new Error("Return to the recorded tab before taking a screenshot.");
+      throw new Error(
+        state.settings.locale === "ru"
+          ? "Вернись на тестируемую вкладку перед скриншотом."
+          : "Return to the recorded tab before taking a screenshot."
+      );
     }
 
     const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
@@ -262,14 +363,58 @@
       quality: 70,
     });
 
-    const screenshot: RecorderScreenshot = {
-      id: crypto.randomUUID(),
-      dataUrl,
-      url: safeUrl(tab.url ?? ""),
-      timestamp: Date.now(),
-    };
+    state.screenshots = [
+      ...state.screenshots,
+      {
+        id: crypto.randomUUID(),
+        dataUrl,
+        url: safeUrl(tab.url ?? ""),
+        timestamp: Date.now(),
+        attached: true,
+      },
+    ].slice(-MAX_SCREENSHOTS);
 
-    state.screenshots = [...state.screenshots, screenshot].slice(-MAX_SCREENSHOTS);
+    await saveState(state);
+    return state;
+  }
+
+  async function updateScreenshot(
+    message: { screenshotId?: string; attached?: boolean; delete?: boolean }
+  ): Promise<RecorderState> {
+    const state = await loadState();
+    if (!message.screenshotId) return state;
+
+    if (message.delete) {
+      state.screenshots = state.screenshots.filter(
+        (item) => item.id !== message.screenshotId
+      );
+    } else {
+      state.screenshots = state.screenshots.map((item) =>
+        item.id === message.screenshotId
+          ? { ...item, attached: message.attached ?? item.attached }
+          : item
+      );
+    }
+
+    await saveState(state);
+    return state;
+  }
+
+  async function updateSettings(
+    message: { settings?: Partial<RecorderSettings> }
+  ): Promise<RecorderState> {
+    const state = await loadState();
+    state.settings = { ...state.settings, ...(message.settings ?? {}) };
+    await saveState(state);
+    notifyTarget(state);
+    return state;
+  }
+
+  async function updateBugReport(
+    message: { bugReport?: Partial<BugReportDraft> }
+  ): Promise<RecorderState> {
+    const state = await loadState();
+    state.bugReport = { ...state.bugReport, ...(message.bugReport ?? {}) };
     await saveState(state);
     return state;
   }
@@ -279,22 +424,18 @@
     tabId: number
   ): Promise<void> {
     const state = await loadState();
+    if (state.status !== "recording" || state.targetTabId !== tabId) return;
 
-    if (
-      state.status !== "recording" ||
-      state.targetTabId !== tabId
-    ) {
-      return;
-    }
+    state.networkEvents = [
+      ...state.networkEvents,
+      {
+        ...event,
+        id: crypto.randomUUID(),
+        url: safeUrl(event.url),
+        timestamp: Date.now(),
+      },
+    ].slice(-MAX_NETWORK_EVENTS);
 
-    const item: RecorderNetworkEvent = {
-      ...event,
-      id: crypto.randomUUID(),
-      url: safeUrl(event.url),
-      timestamp: Date.now(),
-    };
-
-    state.networkEvents = [...state.networkEvents, item].slice(-MAX_NETWORK_EVENTS);
     await saveState(state);
   }
 
@@ -304,9 +445,7 @@
         details.tabId < 0 ||
         details.statusCode < 400 ||
         !/^https?:/i.test(details.url)
-      ) {
-        return;
-      }
+      ) return;
 
       void appendNetworkEvent(
         {
@@ -326,9 +465,7 @@
         details.tabId < 0 ||
         details.error === "net::ERR_ABORTED" ||
         !/^https?:/i.test(details.url)
-      ) {
-        return;
-      }
+      ) return;
 
       void appendNetworkEvent(
         {
@@ -346,6 +483,15 @@
     message: {
       type?: string;
       step?: Partial<RecorderStep>;
+      label?: string;
+      stepId?: string;
+      note?: string;
+      important?: boolean;
+      delete?: boolean;
+      screenshotId?: string;
+      attached?: boolean;
+      settings?: Partial<RecorderSettings>;
+      bugReport?: Partial<BugReportDraft>;
       consoleEvent?: {
         level?: RecorderConsoleEvent["level"];
         message?: string;
@@ -355,14 +501,13 @@
     sender: chrome.runtime.MessageSender
   ) {
     switch (message.type) {
-      case "GET_STATE": {
-        const state = await loadState();
+      case "GET_STATE":
         return {
-          state,
+          state: await loadState(),
           isTargetTab:
-            !sender.tab?.id || sender.tab.id === state.targetTabId,
+            !sender.tab?.id ||
+            sender.tab.id === (await loadState()).targetTabId,
         };
-      }
       case "START_RECORDING":
         return { state: await startRecording() };
       case "TOGGLE_PAUSE":
@@ -377,17 +522,23 @@
         return { state: await addStep(message, sender) };
       case "RECORDER_CONSOLE":
         return { state: await addConsoleEvent(message, sender) };
+      case "ADD_MANUAL_STEP":
+        return { state: await addManualStep(message) };
+      case "UPDATE_STEP":
+        return { state: await updateStep(message) };
+      case "UPDATE_SCREENSHOT":
+        return { state: await updateScreenshot(message) };
+      case "UPDATE_SETTINGS":
+        return { state: await updateSettings(message) };
+      case "UPDATE_BUG_REPORT":
+        return { state: await updateBugReport(message) };
       default:
         return { state: await loadState() };
     }
   }
 
   chrome.runtime.onInstalled.addListener(() => {
-    void loadState().then((state) => {
-      if (!state.sessionId) {
-        void saveState(defaultState());
-      }
-    });
+    void loadState().then((state) => void saveState(state));
   });
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -396,13 +547,9 @@
       .catch(async (error: unknown) => {
         sendResponse({
           state: await loadState(),
-          error:
-            error instanceof Error
-              ? error.message
-              : "Recorder error",
+          error: error instanceof Error ? error.message : "Recorder error",
         });
       });
-
     return true;
   });
 })();

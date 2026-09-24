@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "QA Buddy Recorder",
-  "version": "0.2.0",
-  "description": "Record manual QA steps, technical errors and visual evidence.",
+  "version": "0.3.0",
+  "description": "RU-first QA recorder for reproduction steps, network/console evidence and screenshots.",
   "permissions": [
     "storage",
     "activeTab",
