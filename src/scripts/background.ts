@@ -1,3 +1,5 @@
+import { migrateRecorderState } from "../shared/stateMigration.js";
+
 (() => {
   const STORAGE_KEY = "qaBuddyRecorderState";
   const MAX_STEPS = 500;
@@ -18,11 +20,16 @@
   });
 
   const defaultSettings = (): RecorderSettings => ({
+    theme: "night",
+    mascotActivity: "calm",
+    controllerPosition: null,
+    controllerCollapsed: true,
+    slowRequestThresholdMs: 2000,
+    reducedMotionOverride: "system",
     locale: "ru",
     mascotEnabled: true,
     reducedMotion: false,
     funMode: false,
-    slowRequestThresholdMs: 2000,
     mascotPosition: null,
   });
 
@@ -54,7 +61,7 @@
   });
 
   const defaultState = (): RecorderState => ({
-    schemaVersion: 3,
+    schemaVersion: 4,
     status: "idle",
     sessionId: null,
     targetTabId: null,
@@ -75,43 +82,16 @@
 
   function normalizeState(raw?: Partial<RecorderState>): RecorderState {
     const base = defaultState();
-
-    return {
+    const merged = {
       ...base,
       ...raw,
-      schemaVersion: 3,
-      steps: (raw?.steps ?? []).map((step) => ({
-        ...step,
-        note: step.note ?? "",
-        important: step.important ?? false,
-      })),
-      networkEvents: raw?.networkEvents ?? [],
-      consoleEvents: raw?.consoleEvents ?? [],
-      screenshots: (raw?.screenshots ?? []).map((item) => ({
-        ...item,
-        attached: item.attached ?? true,
-        stepId: item.stepId ?? null,
-      })),
       environment: { ...base.environment, ...(raw?.environment ?? {}) },
       bugReport: { ...base.bugReport, ...(raw?.bugReport ?? {}) },
-      testCase: {
-        ...base.testCase,
-        ...(raw?.testCase ?? {}),
-        steps: raw?.testCase?.steps ?? [],
-      },
-      checklist: {
-        ...base.checklist,
-        ...(raw?.checklist ?? {}),
-        items: raw?.checklist?.items ?? [],
-      },
-      settings: {
-        ...base.settings,
-        ...(raw?.settings ?? {}),
-        locale: "ru",
-        mascotPosition: raw?.settings?.mascotPosition ?? null,
-      },
-      finishedAt: raw?.finishedAt ?? null,
+      testCase: { ...base.testCase, ...(raw?.testCase ?? {}), steps: raw?.testCase?.steps ?? [] },
+      checklist: { ...base.checklist, ...(raw?.checklist ?? {}), items: raw?.checklist?.items ?? [] },
+      settings: { ...base.settings, ...(raw?.settings ?? {}) },
     };
+    return migrateRecorderState(merged) as RecorderState;
   }
 
   async function loadState(): Promise<RecorderState> {

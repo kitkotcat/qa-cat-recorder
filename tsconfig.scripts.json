@@ -7,8 +7,8 @@
     "strict": true,
     "skipLibCheck": true,
     "types": ["chrome"],
-    "rootDir": "src/scripts",
+    "rootDir": "src",
     "outDir": "dist/scripts"
   },
-  "include": ["src/scripts/**/*.ts"]
+  "include": ["src/scripts/**/*.ts", "src/shared/**/*.ts"]
 }

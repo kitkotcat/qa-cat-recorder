@@ -89,17 +89,27 @@ type MascotPosition = {
   y: number;
 };
 
+type RecorderTheme = "night" | "cafe" | "violet";
+type MascotActivity = "off" | "calm" | "active";
+type ReducedMotionOverride = "system" | "on" | "off";
+
 type RecorderSettings = {
+  theme: RecorderTheme;
+  mascotActivity: MascotActivity;
+  controllerPosition: MascotPosition | null;
+  controllerCollapsed: boolean;
+  slowRequestThresholdMs: number;
+  reducedMotionOverride: ReducedMotionOverride;
+  // Transitional v0.3.1 fields kept until the popup is removed.
   locale: RecorderLocale;
   mascotEnabled: boolean;
   reducedMotion: boolean;
   funMode: boolean;
-  slowRequestThresholdMs: number;
   mascotPosition: MascotPosition | null;
 };
 
 type RecorderState = {
-  schemaVersion: 3;
+  schemaVersion: 4;
   status: RecorderStatus;
   sessionId: string | null;
   targetTabId: number | null;
