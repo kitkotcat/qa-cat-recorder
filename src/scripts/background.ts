@@ -869,6 +869,34 @@ import { normalizeRecorderTheme } from "../shared/theme.js";
     }
   }
 
+  let sidePanelConnections = 0;
+
+  async function setControllerCollapsedFromPanel(controllerCollapsed: boolean): Promise<void> {
+    const state = await loadState();
+    if (!state.sessionId || state.targetTabId === null) return;
+
+    state.settings = {
+      ...state.settings,
+      controllerCollapsed,
+    };
+    await saveState(state);
+    notifyTarget(state);
+  }
+
+  chrome.runtime.onConnect.addListener((port) => {
+    if (port.name !== "side-panel-lifecycle") return;
+
+    sidePanelConnections += 1;
+    void setControllerCollapsedFromPanel(true);
+
+    port.onDisconnect.addListener(() => {
+      sidePanelConnections = Math.max(0, sidePanelConnections - 1);
+      if (sidePanelConnections === 0) {
+        void setControllerCollapsedFromPanel(false);
+      }
+    });
+  });
+
   chrome.runtime.onInstalled.addListener(() => {
     void configureSidePanel();
     void loadState().then((state) => void saveState(state));

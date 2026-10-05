@@ -439,6 +439,11 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const panelPort = chrome.runtime.connect({ name: "side-panel-lifecycle" });
+    return () => panelPort.disconnect();
+  }, []);
+
+  useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
