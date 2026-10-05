@@ -8,7 +8,8 @@
     "skipLibCheck": true,
     "types": ["chrome"],
     "rootDir": "src",
-    "outDir": "dist/scripts"
+    "outDir": "dist"
   },
-  "include": ["src/scripts/**/*.ts", "src/shared/**/*.ts"]
+  "include": ["src/scripts/**/*.ts", "src/shared/**/*.ts"],
+  "exclude": ["src/**/*.test.ts"]
 }

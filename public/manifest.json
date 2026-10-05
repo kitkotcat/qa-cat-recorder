@@ -1,34 +1,49 @@
 {
   "manifest_version": 3,
-  "name": "QA Buddy Recorder",
-  "version": "0.3.1",
-  "description": "RU-first QA recorder for reproduction steps, network/console evidence and screenshots.",
+  "name": "QA Cat Recorder",
+  "version": "0.3.2",
+  "description": "QA recorder for reproduction steps, network/console evidence, screenshots and QA drafts.",
   "permissions": [
     "storage",
     "activeTab",
     "tabs",
     "webRequest",
-    "clipboardWrite"
+    "clipboardWrite",
+    "sidePanel"
   ],
-  "host_permissions": ["<all_urls>"],
+  "host_permissions": [
+    "<all_urls>"
+  ],
   "action": {
-    "default_title": "QA Buddy Recorder",
-    "default_popup": "popup.html"
+    "default_title": "QA Cat Recorder"
   },
   "background": {
-    "service_worker": "scripts/background.js"
+    "service_worker": "scripts/background.js",
+    "type": "module"
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["scripts/pageBridge.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "scripts/pageBridge.js"
+      ],
       "run_at": "document_start",
       "world": "MAIN"
     },
     {
-      "matches": ["<all_urls>"],
-      "js": ["scripts/content.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "scripts/content.js"
+      ],
       "run_at": "document_start"
     }
-  ]
+  ],
+  "minimum_chrome_version": "116",
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  }
 }

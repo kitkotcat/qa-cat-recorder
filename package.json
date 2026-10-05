@@ -7,8 +7,8 @@
     "dev": "vite",
     "build": "vite build && tsc -p tsconfig.scripts.json",
     "preview": "vite preview",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "vitest run src",
+    "test:watch": "vitest src"
   },
   "dependencies": {
     "react": "^19.2.6",

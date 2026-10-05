@@ -782,6 +782,16 @@ import { migrateRecorderState } from "../shared/stateMigration.js";
     { urls: ["<all_urls>"] }
   );
 
+  async function openSidePanel(sender: chrome.runtime.MessageSender): Promise<void> {
+    const tabId = sender.tab?.id;
+    if (!tabId) throw new Error("Не удалось определить вкладку для Side Panel.");
+    await chrome.sidePanel.open({ tabId });
+  }
+
+  async function configureSidePanel(): Promise<void> {
+    await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+  }
+
   async function handleMessage(
     message: {
       type?: string;
@@ -807,6 +817,9 @@ import { migrateRecorderState } from "../shared/stateMigration.js";
     sender: chrome.runtime.MessageSender
   ) {
     switch (message.type) {
+      case "OPEN_PANEL":
+        await openSidePanel(sender);
+        return { state: await loadState() };
       case "GET_STATE": {
         const state = await loadState();
         return {
@@ -855,7 +868,12 @@ import { migrateRecorderState } from "../shared/stateMigration.js";
   }
 
   chrome.runtime.onInstalled.addListener(() => {
+    void configureSidePanel();
     void loadState().then((state) => void saveState(state));
+  });
+
+  chrome.runtime.onStartup.addListener(() => {
+    void configureSidePanel();
   });
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
