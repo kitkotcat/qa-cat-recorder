@@ -40,6 +40,8 @@ QA Cat Recorder requests browser permissions required for its core QA workflow, 
 
 QA Cat Recorder does not sell user data and does not share recorded session data with advertisers or data brokers.
 
+QA Cat Recorder uses handled user data only to provide and improve the extension’s single QA-recording purpose. User data is not used for personalized advertising, creditworthiness, lending, or other purposes unrelated to the extension’s core functionality. This use follows the Chrome Web Store User Data Policy and Limited Use requirements.
+
 ## Data deletion
 
 Users can start a new session to replace the current recorded session. Removing the extension from Chrome removes extension-local data according to Chrome's extension storage behavior.

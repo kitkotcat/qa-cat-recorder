@@ -9,6 +9,7 @@ import { redactSensitiveStepLabel } from "../shared/fieldPrivacy.js";
   const MAX_NETWORK_EVENTS = 100;
   const MAX_CONSOLE_EVENTS = 50;
   const MAX_SCREENSHOTS = 5;
+  const HTTP_URLS = ["http://*/*", "https://*/*"];
   const SENSITIVE_QUERY_KEY = /(token|auth|key|secret|password|session|code)/i;
   const requestStartedAt = new Map<string, number>();
 
@@ -719,7 +720,7 @@ import { redactSensitiveStepLabel } from "../shared/fieldPrivacy.js";
 
       requestStartedAt.set(details.requestId, details.timeStamp);
     },
-    { urls: ["<all_urls>"] }
+    { urls: HTTP_URLS }
   );
 
   chrome.webRequest.onCompleted.addListener(
@@ -761,7 +762,7 @@ import { redactSensitiveStepLabel } from "../shared/fieldPrivacy.js";
         );
       });
     },
-    { urls: ["<all_urls>"] }
+    { urls: HTTP_URLS }
   );
 
   chrome.webRequest.onErrorOccurred.addListener(
@@ -794,7 +795,7 @@ import { redactSensitiveStepLabel } from "../shared/fieldPrivacy.js";
         details.tabId
       );
     },
-    { urls: ["<all_urls>"] }
+    { urls: HTTP_URLS }
   );
 
   async function openSidePanel(sender: chrome.runtime.MessageSender): Promise<void> {

@@ -1,77 +1,83 @@
-# Chrome Web Store release notes — QA Cat Recorder v0.3.2
+# QA Cat Recorder — Chrome Web Store
 
-## Product name
-QA Cat Recorder
+## Store listing
 
-## Short description
-Privacy-first QA recorder for reproduction steps, screenshots, Network/Console evidence and QA drafts.
+**Название:** QA Cat Recorder
 
-## Detailed description
-QA Cat Recorder helps manual QA engineers reproduce an issue once and keep the useful evidence around it.
+**Категория:** Developer Tools
 
-During an explicit recording session it can capture page navigation, clicks and form interactions, keep safe test values in steps, mask sensitive fields, collect failed/slow network requests and JavaScript errors, and save screenshots on demand.
+**Язык:** Русский
 
-After the session, QA Cat Recorder can turn the recorded flow into editable Bug Report, Test Case and Checklist drafts.
+**Краткое описание:**
+Privacy-first QA recorder: steps, safe test data, screenshots, Network/Console evidence and QA drafts.
 
-Key points:
-- persistent Chrome Side Panel;
-- floating recording controller with Screenshot, Pause/Resume and Stop;
-- safe form values with automatic masking of passwords, OTP, tokens, API keys, PIN/CVV and card numbers;
-- Network and Console evidence;
-- local screenshots;
-- Bug Report / Test Case / Checklist builders;
-- local-only storage;
-- no account, backend, analytics, cloud sync or AI service.
+**Главная страница:**
+https://github.com/kitkotcat/qa-cat-recorder
 
-## Single purpose
-QA Cat Recorder is a manual software-testing recorder that captures reproduction steps and technical QA evidence during an explicit test session and helps convert that session into QA documentation.
+**Поддержка:**
+https://github.com/kitkotcat/qa-cat-recorder/issues
+
+## Privacy — single purpose
+
+QA Cat Recorder помогает QA-инженеру записать сценарий ручного тестирования на выбранном веб-сайте, собрать технические evidence (шаги, скриншоты, Network/Console metadata) и подготовить черновики Bug Report, Test Case и Checklist.
 
 ## Permission justifications
 
 ### storage
-Stores the current QA session, settings, screenshots and generated drafts locally in the user's browser profile.
+Используется для локального хранения текущей QA-сессии, шагов, настроек, Network/Console metadata, скриншотов и черновиков QA-артефактов в `chrome.storage.local`. Данные не отправляются на backend.
 
-### activeTab / tabs
-Identifies the user-selected test tab, opens the Side Panel for that tab, reads basic tab context needed for environment information, and captures the active tested tab on explicit screenshot actions.
-
-### sidePanel
-Provides the persistent QA workspace next to the tested page.
+### activeTab
+Используется для работы с текущей вкладкой пользователя и для `chrome.tabs.captureVisibleTab()` при явном действии «Скрин». Screenshot создаётся только по команде пользователя.
 
 ### webRequest
-Collects failed, 4xx/5xx and slow request metadata during an active recording session for QA evidence.
+Используется во время активной записи для фиксации metadata неуспешных и медленных HTTP/HTTPS-запросов: method, URL, status/error, resource type и duration. Request/response body не считываются.
 
 ### clipboardWrite
-Copies generated Bug Report, Test Case and Checklist text when the user explicitly requests Copy.
+Используется только по явному действию пользователя для копирования готового Bug Report, Test Case, Checklist или другого сформированного текста в clipboard.
 
-### host access: <all_urls>
-The recorder must be able to capture QA steps and technical evidence on whichever http/https site the user chooses to test. Recording starts only after explicit user action.
+### sidePanel
+Используется для основного интерфейса QA Cat Recorder в Chrome Side Panel и для его открытия по действию пользователя.
 
-## Privacy disclosures
-- Website content / user activity: yes, only during an explicit recording session.
-- Form data: safe values may be stored locally when enabled; sensitive values are masked before storage.
-- Authentication information: raw passwords/tokens/OTP are not intentionally stored; matching fields are masked.
-- Web history: page URLs/navigation are stored locally as part of the current QA session.
-- User-provided content: screenshots and manually added notes may be stored locally.
-- Data sale: no.
-- Advertising: no.
-- Analytics: no.
-- Remote backend/cloud sync: no.
+### host permissions: http://*/* и https://*/*
+Нужны, чтобы пользователь мог запустить запись на выбранном HTTP/HTTPS-сайте, а content scripts могли фиксировать шаги, form interactions и Console errors именно во время QA-сессии. Доступ не используется на `chrome://`, `file://` и других схемах.
 
-Privacy policy: `PRIVACY.md` in the public repository.
+## Data usage
 
-## Store assets checklist
-- 128×128 icon: `public/icons/icon-128.png`
-- 48×48 icon: `public/icons/icon-48.png`
-- 32×32 icon: `public/icons/icon-32.png`
-- 16×16 icon: `public/icons/icon-16.png`
-- At least one real product screenshot: required in Chrome Web Store Developer Dashboard.
+Отметить:
+- **Personally identifiable information** — safe form values могут содержать имя, email или username, если пользователь включил сохранение safe values.
+- **Web history** — URL и навигация по страницам во время активной QA-сессии.
+- **User activity** — clicks, form interactions и действия пользователя в записываемом сценарии.
+- **Website content** — только данные, необходимые для QA-сценария: видимый screenshot по явной команде пользователя, labels элементов, safe form values и JavaScript error messages.
 
-## Recommended screenshots
-1. Side Panel — active recording with Steps.
-2. Floating controller on a tested page.
-3. Evidence tab with Network / Console.
-4. Finished Test Case or Bug Report builder.
-5. Settings showing safe-values privacy control.
+Не отмечать:
+- Authentication information
+- Financial and payment information
+- Health information
+- Location
+- Personal communications
 
-## Submission note
-Use the release ZIP built from the contents of `dist/` so `manifest.json` is at the root of the archive.
+Пароли, OTP, tokens/API keys, PIN/CVV/security codes и payment-card values маскируются и не сохраняются в открытом виде.
+
+## Data handling declarations
+
+- Данные не продаются.
+- Данные не используются для рекламы.
+- Данные не передаются data brokers.
+- QA-сессии не отправляются на внешний backend.
+- Analytics и AI API отсутствуют.
+- Данные хранятся локально в `chrome.storage.local`.
+- Export выполняется только по явному действию пользователя.
+- Privacy Policy: https://github.com/kitkotcat/qa-cat-recorder/blob/main/PRIVACY.md
+- Подтверждаем соответствие Chrome Web Store User Data Policy / Limited Use.
+
+## Submit checklist
+
+1. Store listing заполнен на русском языке.
+2. Загружены icon, минимум один реальный screenshot и обязательный promo 440x280.
+3. Privacy / single purpose заполнен.
+4. Для каждой permission добавлено точное обоснование.
+5. Data usage соответствует фактической обработке данных.
+6. Privacy Policy URL публично открывается.
+7. Загружен свежий `qa-cat-recorder-v0.3.2-chrome-web-store.zip`.
+8. Выполнен финальный smoke.
+9. Нажать Submit for review.
