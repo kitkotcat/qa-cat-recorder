@@ -33,7 +33,12 @@ jobs:
           test -f dist/sidepanel.html
           test -f dist/scripts/background.js
           test -f dist/scripts/content.js
+          test -f dist/scripts/fieldPrivacy.js
           test -f dist/scripts/pageBridge.js
+          test -f dist/icons/icon-16.png
+          test -f dist/icons/icon-32.png
+          test -f dist/icons/icon-48.png
+          test -f dist/icons/icon-128.png
 
       - name: Upload unpacked extension
         uses: actions/upload-artifact@v4

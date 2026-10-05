@@ -7,7 +7,7 @@
 ## Статус
 
 - **Version:** v0.3.2
-- **Status:** active development / portfolio project
+- **Status:** public beta / first working release
 - **Browsers:** Chrome 116+ / Chromium-based Edge
 - **Manifest:** V3
 - **Storage:** local-only, `chrome.storage.local`
@@ -31,17 +31,16 @@
 
 ### Cat Controller
 
-Во время активной записи на тестируемой странице появляется компактный контроллер:
+Во время активной записи на тестируемой странице остаётся полноценный floating controller:
 
-- collapsed / expanded mode;
-- step counter и recording status;
+- step counter, timer и recording status;
 - screenshot;
 - pause / resume;
 - stop;
 - открыть Side Panel;
 - drag & drop;
 - сохранение позиции;
-- сохранение состояния collapsed/expanded.
+- остаётся доступным вместе с открытым Side Panel.
 
 Controller работает внутри Shadow DOM, чтобы меньше зависеть от CSS тестируемого сайта. Его собственные клики не должны попадать в recorded steps.
 
@@ -51,7 +50,9 @@ Controller работает внутри Shadow DOM, чтобы меньше з�
 
 - page navigation;
 - clicks;
-- изменения input/select/textarea **без сохранения введённых значений**;
+- input / textarea — с безопасными значениями, если это включено в Settings;
+- select / checkbox / radio — как осмысленные пользовательские действия;
+- password / OTP / token / API key / PIN / CVV / card number — всегда маскируются;
 - manual steps;
 - notes;
 - important flag;
@@ -139,8 +140,8 @@ Coffee/play/walk/litter не запускаются во время активн
 
 Recorder работает local-only.
 
-- значения `input` / `textarea` не сохраняются;
-- password values не читаются и не сохраняются;
+- безопасные значения форм могут локально сохраняться в Steps по настройке пользователя;
+- password / OTP / token / API key / PIN / CVV / card-number values автоматически маскируются до отправки шага в background;
 - чувствительные query params маскируются;
 - common secret patterns маскируются в console evidence;
 - screenshots создаются только вручную;
@@ -216,15 +217,22 @@ dist/
 
 QA Cat Recorder развивается как самостоятельный companion tool для ручного тестирования и сбора evidence.
 
+## Privacy
+
+Политика конфиденциальности: [PRIVACY.md](./PRIVACY.md).
+
+## License
+
+MIT — см. [LICENSE](./LICENSE).
+
 ## Roadmap после v0.3.2
 
 Не входит в текущий release:
 
 - screenshot annotations;
 - session history / IndexedDB;
-- Chrome Web Store packaging;
 - Jira / YouGile integrations;
-- repository rename с `qa-buddy-recorder` на `qa-cat-recorder`.
+- cloud sync / AI report generation.
 
 ---
 
