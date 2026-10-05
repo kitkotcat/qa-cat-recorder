@@ -253,6 +253,9 @@
 .eye b { position:absolute; left:1px; top:0; width:1px; height:1px; background:#f8fafc; }
 .cheek { top:14px; width:4px; height:2px; background:rgba(248,250,252,.28); }
 .cheek-left { left:4px; } .cheek-right { right:4px; }
+.forehead-mark { left:11px; top:3px; width:5px; height:2px; border-left:1px solid #0e7490; border-right:1px solid #0e7490; opacity:.8; }
+.mouth { left:11px; top:16px; width:5px; height:2px; border-bottom:1px solid #0f172a; border-radius:0 0 5px 5px; }
+
 .chest { left:7px; bottom:1px; width:10px; height:8px; background:rgba(248,250,252,.72); clip-path:polygon(15% 0,85% 0,100% 100%,0 100%); }
 .collar { left:1px; top:1px; width:22px; height:3px; background:#f59e0b; }
 .qa-tag { left:9px; top:4px; min-width:9px; padding:1px; border-radius:2px; color:#020617; background:#facc15; font:700 4px/1 monospace; text-align:center; }
@@ -273,6 +276,8 @@
 .state-coffee .pixel-coffee { opacity:1; animation:mascot-coffee 4600ms steps(6,end); }
 .state-coffee .steam { animation:mascot-steam 900ms steps(3,end) infinite; }
 .state-coffee .paw-right { animation:mascot-coffee-paw 4600ms steps(6,end); }
+.state-coffee .head { animation:mascot-coffee-head 4600ms steps(6,end); transform-origin:50% 80%; }
+.state-coffee .tail { animation:mascot-coffee-tail 4600ms steps(6,end); }
 
 .reduced .pixel-coffee { animation:none !important; }
 @keyframes mascot-ear { 0%,100%{transform:rotate(0)} 50%{transform:rotate(-18deg)} }
@@ -281,4 +286,6 @@
 @keyframes mascot-stretch { 0%,100%{transform:scaleX(1) translateY(0)} 45%,70%{transform:scaleX(1.12) translateY(3px)} }
 @keyframes mascot-coffee { 0%,12%{transform:translate(0,3px);opacity:0} 20%{opacity:1} 45%,68%{transform:translate(-22px,-15px);opacity:1} 78%{transform:translate(0,0);opacity:1} 100%{opacity:0} }
 @keyframes mascot-coffee-paw { 0%,30%,85%,100%{transform:translate(0,0)} 45%,68%{transform:translate(8px,-9px)} }
+@keyframes mascot-coffee-head { 0%,32%,82%,100%{transform:rotate(0) translateY(0)} 45%,68%{transform:rotate(5deg) translateY(1px)} 72%{transform:rotate(0) translateY(0)} }
+@keyframes mascot-coffee-tail { 0%,38%,78%,100%{transform:rotate(0)} 52%{transform:rotate(12deg)} 66%{transform:rotate(-4deg)} }
 @keyframes mascot-steam { 0%{transform:translateY(2px);opacity:.2} 100%{transform:translateY(-4px);opacity:.8} }

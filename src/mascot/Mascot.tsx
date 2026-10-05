@@ -186,7 +186,9 @@ export default function Mascot({
           <span className="head">
             <i className="eye eye-left"><b /></i>
             <i className="eye eye-right"><b /></i>
+            <i className="forehead-mark" />
             <i className="nose" />
+            <i className="mouth" />
             <i className="cheek cheek-left" />
             <i className="cheek cheek-right" />
             <i className="whisker whisker-l1" /><i className="whisker whisker-l2" /><i className="whisker whisker-l3" />
