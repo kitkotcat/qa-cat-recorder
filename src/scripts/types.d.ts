@@ -1,5 +1,4 @@
 type RecorderStatus = "idle" | "recording" | "paused" | "stopped";
-type RecorderLocale = "ru" | "en";
 type BuilderMode = "bug" | "testcase" | "checklist";
 
 type RecorderStep = {
@@ -100,11 +99,6 @@ type RecorderSettings = {
   controllerCollapsed: boolean;
   slowRequestThresholdMs: number;
   reducedMotionOverride: ReducedMotionOverride;
-  // Transitional v0.3.1 fields kept until the popup is removed.
-  locale: RecorderLocale;
-  mascotEnabled: boolean;
-  reducedMotion: boolean;
-  funMode: boolean;
   mascotPosition: MascotPosition | null;
 };
 

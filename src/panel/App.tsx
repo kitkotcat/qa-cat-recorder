@@ -101,10 +101,6 @@ type RecorderSettings = {
   controllerCollapsed: boolean;
   slowRequestThresholdMs: number;
   reducedMotionOverride: "system" | "on" | "off";
-  locale: "ru" | "en";
-  mascotEnabled: boolean;
-  reducedMotion: boolean;
-  funMode: boolean;
   mascotPosition: MascotPosition | null;
 };
 
@@ -181,10 +177,6 @@ const emptyState: RecorderState = {
     controllerCollapsed: true,
     slowRequestThresholdMs: 2000,
     reducedMotionOverride: "system",
-    locale: "ru",
-    mascotEnabled: true,
-    reducedMotion: false,
-    funMode: false,
     mascotPosition: null,
   },
 };
@@ -212,7 +204,6 @@ function normalizeState(raw?: Partial<RecorderState>): RecorderState {
     settings: {
       ...emptyState.settings,
       ...(raw?.settings ?? {}),
-      locale: "ru",
       theme: raw?.settings?.theme ?? "night",
       mascotActivity: raw?.settings?.mascotActivity ?? "calm",
       controllerPosition: raw?.settings?.controllerPosition ?? null,
@@ -908,7 +899,7 @@ export default function App() {
                           <button className="button button-primary" onClick={() => void copyText(buildBugDraft(state), "Bug Report скопирован")}>
                             Скопировать
                           </button>
-                          <button className="button button-secondary" onClick={() => downloadFile(buildBugDraft(state), `qa-buddy-bug-${state.sessionId}.md`, "text/markdown")}>
+                          <button className="button button-secondary" onClick={() => downloadFile(buildBugDraft(state), `qa-cat-bug-${state.sessionId}.md`, "text/markdown")}>
                             Markdown
                           </button>
                         </div>
@@ -988,7 +979,7 @@ export default function App() {
                           <button className="button button-primary" onClick={() => void copyText(buildTestCaseDraft(state), "Test Case скопирован")}>
                             Скопировать
                           </button>
-                          <button className="button button-secondary" onClick={() => downloadFile(buildTestCaseDraft(state), `qa-buddy-test-case-${state.sessionId}.md`, "text/markdown")}>
+                          <button className="button button-secondary" onClick={() => downloadFile(buildTestCaseDraft(state), `qa-cat-test-case-${state.sessionId}.md`, "text/markdown")}>
                             Markdown
                           </button>
                         </div>
@@ -1062,7 +1053,7 @@ export default function App() {
                           <button className="button button-primary" onClick={() => void copyText(buildChecklistDraft(state), "Checklist скопирован")}>
                             Скопировать
                           </button>
-                          <button className="button button-secondary" onClick={() => downloadFile(buildChecklistDraft(state), `qa-buddy-checklist-${state.sessionId}.md`, "text/markdown")}>
+                          <button className="button button-secondary" onClick={() => downloadFile(buildChecklistDraft(state), `qa-cat-checklist-${state.sessionId}.md`, "text/markdown")}>
                             Markdown
                           </button>
                         </div>
@@ -1072,7 +1063,7 @@ export default function App() {
                     <div className="draft-toolbar">
                       <button onClick={() => void rebuildBuilder()}>↻ Пересобрать draft</button>
                       <button onClick={() => void resetBuilder()}>Сбросить draft</button>
-                      <button onClick={() => downloadFile(JSON.stringify(state, null, 2), `qa-buddy-session-${state.sessionId}.json`, "application/json")}>
+                      <button onClick={() => downloadFile(JSON.stringify(state, null, 2), `qa-cat-session-${state.sessionId}.json`, "application/json")}>
                         Экспорт JSON
                       </button>
                     </div>

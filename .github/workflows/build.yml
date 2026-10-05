@@ -1,4 +1,4 @@
-name: Build QA Buddy Recorder
+name: Build QA Cat Recorder
 
 on:
   push:
@@ -21,13 +21,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Run tests
+        run: npm test
+
       - name: Build extension
         run: npm run build
 
       - name: Verify extension output
         run: |
           test -f dist/manifest.json
-          test -f dist/popup.html
+          test -f dist/sidepanel.html
           test -f dist/scripts/background.js
           test -f dist/scripts/content.js
           test -f dist/scripts/pageBridge.js
@@ -35,5 +38,5 @@ jobs:
       - name: Upload unpacked extension
         uses: actions/upload-artifact@v4
         with:
-          name: qa-buddy-recorder-unpacked
+          name: qa-cat-recorder-unpacked
           path: dist

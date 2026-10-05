@@ -28,10 +28,6 @@ import { normalizeRecorderTheme } from "../shared/theme.js";
     controllerCollapsed: true,
     slowRequestThresholdMs: 2000,
     reducedMotionOverride: "system",
-    locale: "ru",
-    mascotEnabled: true,
-    reducedMotion: false,
-    funMode: false,
     mascotPosition: null,
   });
 
@@ -300,10 +296,7 @@ import { normalizeRecorderTheme } from "../shared/theme.js";
       sessionId: crypto.randomUUID(),
       targetTabId: tab.id,
       startedAt: now,
-      settings: {
-        ...previous.settings,
-        locale: "ru",
-      },
+      settings: { ...previous.settings },
       environment,
       bugReport: {
         ...defaultBugReport(),
@@ -371,10 +364,7 @@ import { normalizeRecorderTheme } from "../shared/theme.js";
     const previous = await loadState();
     const state = defaultState();
 
-    state.settings = {
-      ...previous.settings,
-      locale: "ru",
-    };
+    state.settings = { ...previous.settings };
 
     await saveState(state);
     notifyTarget(state);
@@ -597,7 +587,6 @@ import { normalizeRecorderTheme } from "../shared/theme.js";
     const next = {
       ...state.settings,
       ...(message.settings ?? {}),
-      locale: "ru" as RecorderLocale,
     };
 
     const threshold = Number(next.slowRequestThresholdMs);
@@ -613,6 +602,8 @@ import { normalizeRecorderTheme } from "../shared/theme.js";
     }
 
     next.theme = normalizeRecorderTheme(next.theme);
+    if (!["off", "calm", "active"].includes(next.mascotActivity)) next.mascotActivity = "calm";
+    if (!["system", "on", "off"].includes(next.reducedMotionOverride)) next.reducedMotionOverride = "system";
     next.controllerPosition = normalizeControllerPosition(next.controllerPosition);
     next.controllerCollapsed = Boolean(next.controllerCollapsed);
 

@@ -63,11 +63,7 @@ export function migrateRecorderState(raw: unknown): AnyRecord {
     testCase: asRecord(source.testCase),
     checklist: asRecord(source.checklist),
     settings: {
-      locale: "ru",
-      mascotEnabled: migrateMascotActivity(settings) !== "off",
-      reducedMotion: migrateReducedMotion(settings) === "on",
-      funMode: migrateMascotActivity(settings) === "active",
-      mascotPosition: normalizePosition(settings.mascotPosition ?? settings.controllerPosition),
+      mascotPosition: normalizePosition(settings.mascotPosition),
       theme: normalizeRecorderTheme(settings.theme),
       mascotActivity: migrateMascotActivity(settings),
       controllerPosition: normalizePosition(settings.controllerPosition ?? settings.mascotPosition),
