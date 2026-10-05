@@ -5,10 +5,7 @@
   let shadow: ShadowRoot | null = null;
   let lastUrl = location.href;
   let controllerActionInFlight = false;
-  const FIELD_CAPTURE_DEBOUNCE_MS = 450;
-  const fieldCaptureTimers = new Map<Element, number>();
   const dirtyFields = new Set<Element>();
-  const capturedFields = new Set<Element>();
 
   function active() {
     return state?.status === "recording" || state?.status === "paused";
@@ -83,30 +80,48 @@
     );
   }
 
+  function fieldKind(target: Element): "text" | "select" | "checkbox" | "radio" {
+    if (target instanceof HTMLSelectElement) return "select";
+    if (target instanceof HTMLInputElement && target.type === "checkbox") return "checkbox";
+    if (target instanceof HTMLInputElement && target.type === "radio") return "radio";
+    return "text";
+  }
+
+  function fieldValue(target: Element): string {
+    if (target instanceof HTMLSelectElement) {
+      return target.selectedOptions[0]?.textContent?.trim() || target.value;
+    }
+    if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return target.value;
+    return target.textContent?.trim() ?? "";
+  }
+
+  function fieldPrivacyMeta(target: Element, label: string) {
+    return {
+      type: target instanceof HTMLInputElement ? target.type : "",
+      autocomplete: target.getAttribute("autocomplete") ?? "",
+      name: target.getAttribute("name") ?? "",
+      id: target.getAttribute("id") ?? "",
+      label,
+    };
+  }
+
   function flushFieldCapture(target: Element) {
-    const timer = fieldCaptureTimers.get(target);
-    if (timer !== undefined) window.clearTimeout(timer);
-    fieldCaptureTimers.delete(target);
-
-    if (!dirtyFields.has(target) || capturedFields.has(target) || state?.status !== "recording") return;
-    capturedFields.add(target);
-    sendStep("input", `Заполнить поле «${describeField(target)}»`);
-  }
-
-  function scheduleFieldCapture(target: Element) {
-    dirtyFields.add(target);
-    const previous = fieldCaptureTimers.get(target);
-    if (previous !== undefined) window.clearTimeout(previous);
-    const timer = window.setTimeout(() => flushFieldCapture(target), FIELD_CAPTURE_DEBOUNCE_MS);
-    fieldCaptureTimers.set(target, timer);
-  }
-
-  function resetFieldCapture(target: Element) {
-    const timer = fieldCaptureTimers.get(target);
-    if (timer !== undefined) window.clearTimeout(timer);
-    fieldCaptureTimers.delete(target);
+    if (!dirtyFields.has(target) || state?.status !== "recording") return;
     dirtyFields.delete(target);
-    capturedFields.delete(target);
+
+    const label = describeField(target);
+    const kind = fieldKind(target);
+    const checked = target instanceof HTMLInputElement ? target.checked : undefined;
+    const sensitive = QACatFieldPrivacy.isSensitive(fieldPrivacyMeta(target, label));
+    const step = QACatFieldPrivacy.buildStep({
+      label,
+      kind,
+      value: state.settings.captureSafeFieldValues && !sensitive ? fieldValue(target) : "",
+      checked,
+      captureSafeValues: state.settings.captureSafeFieldValues,
+      sensitive,
+    });
+    sendStep("input", step);
   }
 
   function sendStep(
@@ -342,7 +357,7 @@
       if (host && event.composedPath().includes(host)) return;
       const target = fieldTarget(event.target);
       if (!target) return;
-      scheduleFieldCapture(target);
+      dirtyFields.add(target);
     },
     true
   );
@@ -366,7 +381,6 @@
       const target = fieldTarget(event.target);
       if (!target) return;
       flushFieldCapture(target);
-      resetFieldCapture(target);
     },
     true
   );

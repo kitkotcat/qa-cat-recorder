@@ -4,17 +4,17 @@ import { describe, expect, it } from "vitest";
 const content = readFileSync(new URL("./content.ts", import.meta.url), "utf8");
 
 describe("field interaction capture", () => {
-  it("captures typing through input events instead of relying only on change", () => {
+  it("marks typing on input and persists the final value on blur/change", () => {
     expect(content).toContain('document.addEventListener(\n    "input"');
-    expect(content).toContain("scheduleFieldCapture");
-    expect(content).toContain("FIELD_CAPTURE_DEBOUNCE_MS");
+    expect(content).toContain("dirtyFields.add(target)");
+    expect(content).not.toContain("FIELD_CAPTURE_DEBOUNCE_MS");
   });
 
-  it("flushes a field step on focusout/change without recording values", () => {
+  it("flushes a single semantic field step on focusout/change", () => {
     expect(content).toContain('document.addEventListener(\n    "focusout"');
     expect(content).toContain("flushFieldCapture");
-    expect(content).toContain('`Заполнить поле «${describeField(target)}»`');
-    expect(content).not.toContain("target.value");
+    expect(content).toContain("QACatFieldPrivacy.buildStep");
+    expect(content).toContain("captureSafeFieldValues");
   });
 
   it("uses semantic labels and supports contenteditable fields", () => {

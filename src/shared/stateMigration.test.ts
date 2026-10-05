@@ -38,6 +38,7 @@ describe("migrateRecorderState", () => {
     expect(result.settings.controllerManuallyCollapsed).toBe(false);
     expect(result.settings.reducedMotionOverride).toBe("system");
     expect(result.settings.controllerPosition).toEqual({ x: 10, y: 20 });
+    expect(result.settings.captureSafeFieldValues).toBe(true);
   });
 
   it("preserves only the explicit manual collapse preference", () => {
@@ -54,6 +55,15 @@ describe("migrateRecorderState", () => {
       settings: { ...baseV31.settings, controllerManuallyCollapsed: true },
     });
     expect(manualState.settings.controllerManuallyCollapsed).toBe(true);
+  });
+
+  it("preserves an explicit opt-out for safe field values", () => {
+    const result = migrateRecorderState({
+      ...baseV31,
+      schemaVersion: 5,
+      settings: { ...baseV31.settings, captureSafeFieldValues: false },
+    });
+    expect(result.settings.captureSafeFieldValues).toBe(false);
   });
 
   it("preserves active session data and drafts", () => {

@@ -71,6 +71,8 @@ export function migrateRecorderState(raw: unknown): AnyRecord {
         Number(source.schemaVersion) >= 5 && typeof settings.controllerManuallyCollapsed === "boolean"
           ? settings.controllerManuallyCollapsed
           : false,
+      captureSafeFieldValues:
+        typeof settings.captureSafeFieldValues === "boolean" ? settings.captureSafeFieldValues : true,
       slowRequestThresholdMs: clampThreshold(settings.slowRequestThresholdMs),
       reducedMotionOverride: migrateReducedMotion(settings),
     },

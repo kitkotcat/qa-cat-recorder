@@ -99,6 +99,7 @@ type RecorderSettings = {
   mascotActivity: "off" | "calm" | "active";
   controllerPosition: MascotPosition | null;
   controllerManuallyCollapsed: boolean;
+  captureSafeFieldValues: boolean;
   slowRequestThresholdMs: number;
   reducedMotionOverride: "system" | "on" | "off";
   mascotPosition: MascotPosition | null;
@@ -175,6 +176,7 @@ const emptyState: RecorderState = {
     mascotActivity: "calm",
     controllerPosition: null,
     controllerManuallyCollapsed: false,
+    captureSafeFieldValues: true,
     slowRequestThresholdMs: 2000,
     reducedMotionOverride: "system",
     mascotPosition: null,
@@ -208,6 +210,7 @@ function normalizeState(raw?: Partial<RecorderState>): RecorderState {
       mascotActivity: raw?.settings?.mascotActivity ?? "calm",
       controllerPosition: raw?.settings?.controllerPosition ?? null,
       controllerManuallyCollapsed: raw?.settings?.controllerManuallyCollapsed ?? false,
+      captureSafeFieldValues: raw?.settings?.captureSafeFieldValues ?? true,
       reducedMotionOverride: raw?.settings?.reducedMotionOverride ?? "system",
       mascotPosition: raw?.settings?.mascotPosition ?? null,
     },
@@ -1254,6 +1257,20 @@ export default function App() {
               </select>
             </section>
 
+            <section className="settings-section field-value-settings">
+              <div>
+                <strong>Сохранять безопасные значения</strong>
+                <small>Обычные введённые данные попадут в Steps автоматически. Пароли, токены, OTP и платёжные данные всегда скрываются.</small>
+              </div>
+              <select
+                value={state.settings.captureSafeFieldValues ? "on" : "off"}
+                onChange={(event) => void updateSetting({ captureSafeFieldValues: event.target.value === "on" })}
+              >
+                <option value="on">Вкл</option>
+                <option value="off">Выкл</option>
+              </select>
+            </section>
+
             <section className="settings-section settings-threshold">
               <div>
                 <strong>Slow request threshold</strong>
@@ -1299,7 +1316,7 @@ export default function App() {
               <strong>Хранение данных</strong>
               <p>
                 Steps, Network/Console metadata и screenshots хранятся локально в chrome.storage.local.
-                Ничего не отправляется на backend.
+                Пароли, токены, OTP и платёжные данные всегда скрываются. Ничего не отправляется на backend.
               </p>
             </aside>
           </div>

@@ -1,6 +1,7 @@
 import { migrateRecorderState } from "../shared/stateMigration.js";
 import { normalizeControllerPosition } from "../shared/controller.js";
 import { normalizeRecorderTheme } from "../shared/theme.js";
+import { redactSensitiveStepLabel } from "../shared/fieldPrivacy.js";
 
 (() => {
   const STORAGE_KEY = "qaBuddyRecorderState";
@@ -26,6 +27,7 @@ import { normalizeRecorderTheme } from "../shared/theme.js";
     mascotActivity: "calm",
     controllerPosition: null,
     controllerManuallyCollapsed: false,
+    captureSafeFieldValues: true,
     slowRequestThresholdMs: 2000,
     reducedMotionOverride: "system",
     mascotPosition: null,
@@ -405,7 +407,7 @@ import { normalizeRecorderTheme } from "../shared/theme.js";
 
     const incoming = makeStep(
       message.step.type,
-      message.step.label,
+      message.step.type === "input" ? redactSensitiveStepLabel(message.step.label) : message.step.label,
       message.step.url
     );
 
@@ -621,6 +623,7 @@ import { normalizeRecorderTheme } from "../shared/theme.js";
     if (!["system", "on", "off"].includes(next.reducedMotionOverride)) next.reducedMotionOverride = "system";
     next.controllerPosition = normalizeControllerPosition(next.controllerPosition);
     next.controllerManuallyCollapsed = Boolean(next.controllerManuallyCollapsed);
+    next.captureSafeFieldValues = next.captureSafeFieldValues !== false;
 
     state.settings = next;
     await saveState(state);

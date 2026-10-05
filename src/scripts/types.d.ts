@@ -97,6 +97,7 @@ type RecorderSettings = {
   mascotActivity: MascotActivity;
   controllerPosition: MascotPosition | null;
   controllerManuallyCollapsed: boolean;
+  captureSafeFieldValues: boolean;
   slowRequestThresholdMs: number;
   reducedMotionOverride: ReducedMotionOverride;
   mascotPosition: MascotPosition | null;
@@ -121,3 +122,12 @@ type RecorderState = {
   checklist: ChecklistDraft;
   settings: RecorderSettings;
 };
+
+
+type QACatFieldPrivacyApi = {
+  isSensitive(meta: { type?: string; autocomplete?: string; name?: string; id?: string; label?: string }): boolean;
+  buildStep(input: { label: string; kind: "text" | "select" | "checkbox" | "radio"; value?: string; checked?: boolean; captureSafeValues: boolean; sensitive?: boolean }): string;
+  redactSensitiveStepLabel(label: string): string;
+};
+
+declare const QACatFieldPrivacy: QACatFieldPrivacyApi;

@@ -37,6 +37,7 @@
         "<all_urls>"
       ],
       "js": [
+        "scripts/fieldPrivacy.js",
         "scripts/content.js"
       ],
       "run_at": "document_start"
