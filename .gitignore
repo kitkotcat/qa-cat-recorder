@@ -18,3 +18,9 @@ dist/
 
 .worktrees/
 .superpowers/
+
+# Local Chrome Web Store marketing assets
+store-assets/
+
+# Local release artifacts
+release/
