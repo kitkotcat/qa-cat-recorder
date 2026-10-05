@@ -1,135 +1,175 @@
-# QA Buddy Recorder 🐱
+# QA Cat Recorder 🐱
 
-**QA Buddy Recorder** — browser extension для ручного QA, которая помогает фиксировать шаги воспроизведения, собирать technical evidence и собирать черновики QA-артефактов во время тестовой сессии.
+**QA Cat Recorder** — Chrome/Edge extension для ручного QA, который помогает один раз воспроизвести проблему и автоматически собрать полезный контекст: steps, screenshots, Network/Console evidence и черновики QA-артефактов.
 
-Проект ориентирован прежде всего на **русскоязычных QA** и является частью экосистемы [QA Buddy](https://github.com/kitkotcat/qa-buddy).
+Проект ориентирован на быстрый рабочий flow: **минимум лишних действий во время тестирования, максимум полезного evidence после воспроизведения**.
 
 ## Статус
 
-- **Version:** v0.3.1
-- **Status:** active development / portfolio project
-- **Browsers:** Chrome / Edge, Manifest V3
+- **Version:** v0.3.2
+- **Status:** public beta / first working release
+- **Browsers:** Chrome 116+ / Chromium-based Edge
+- **Manifest:** V3
 - **Storage:** local-only, `chrome.storage.local`
-- **CI:** GitHub Actions build
+- **CI:** GitHub Actions — tests + build
 
-## Что умеет Recorder
+## Основной UX
 
-### Recording & evidence
+### Side Panel
 
-- Start / Pause / Resume / Stop recording session;
-- запись page navigation и пользовательских кликов;
-- фиксация изменений полей без сохранения введённых значений;
-- floating toolbar поверх тестируемой страницы;
-- ручной screenshot текущей вкладки;
-- привязка screenshot к последнему recorded step;
-- автоматический capture HTTP **4xx / 5xx**;
-- capture network errors;
-- capture `console.error`, uncaught exceptions и unhandled promise rejections;
-- отображение request duration и slow requests;
-- итоговая сводка recorded session.
+Главный интерфейс работает через постоянный Chrome Side Panel и не закрывается при обычном взаимодействии с тестируемой страницей.
 
-### QA Builders
+Основные разделы:
 
-В v0.3.1 доступны три режима:
+- **Сессия**
+- **Шаги**
+- **Evidence** — Network / Console
+- **Скриншоты**
+- **Отчёт**
 
-- **Bug Report Builder**;
+Настройки открываются отдельно через `⚙`.
+
+### Cat Controller
+
+Во время активной записи на тестируемой странице остаётся полноценный floating controller:
+
+- step counter, timer и recording status;
+- screenshot;
+- pause / resume;
+- stop;
+- открыть Side Panel;
+- drag & drop;
+- сохранение позиции;
+- остаётся доступным вместе с открытым Side Panel.
+
+Controller работает внутри Shadow DOM, чтобы меньше зависеть от CSS тестируемого сайта. Его собственные клики не должны попадать в recorded steps.
+
+## Что собирает Recorder
+
+### Steps
+
+- page navigation;
+- clicks;
+- input / textarea — с безопасными значениями, если это включено в Settings;
+- select / checkbox / radio — как осмысленные пользовательские действия;
+- password / OTP / token / API key / PIN / CVV / card number — всегда маскируются;
+- manual steps;
+- notes;
+- important flag;
+- удаление ошибочно записанного шага.
+
+### Network evidence
+
+- HTTP 4xx / 5xx;
+- network errors;
+- method;
+- endpoint;
+- resource type;
+- request duration;
+- slow request detection с настраиваемым threshold.
+
+### Console evidence
+
+- `console.error`;
+- uncaught exceptions;
+- unhandled promise rejections;
+- sanitized message и source URL.
+
+### Screenshots
+
+- только по явному действию пользователя;
+- связываются с последним recorded step;
+- можно исключить из итогового report;
+- controller временно скрывается на время capture, чтобы не попадать в screenshot, где это поддерживается браузером.
+
+## QA Builders
+
+После завершения сессии основное действие — **Создать Bug Report**.
+
+Также доступны:
+
 - **Test Case Builder**;
 - **Checklist Builder**.
 
+Builders используют данные recorded session и позволяют редактировать результат перед копированием/экспортом.
+
 Поддерживаются:
 
-- переключение между builders;
-- редактирование draft;
-- пересборка draft из текущих steps/evidence;
-- сброс только draft без удаления raw evidence;
-- создание новой сессии;
-- Markdown export для QA-артефактов;
-- JSON export recorded session.
+- copy;
+- Markdown export;
+- JSON session export;
+- reset draft без удаления raw evidence;
+- rebuild draft из текущих steps.
 
-### Environment metadata
+## Темы
 
-Recorder автоматически собирает технический контекст сессии:
+В v0.3.2 доступны три встроенные темы:
 
-- URL / domain;
-- browser;
-- OS;
-- viewport;
-- locale.
+- **Night QA** — default;
+- **Cat Café**;
+- **Debug Violet**.
+
+UI построен на CSS custom properties. На пустых фоновых областях используется очень лёгкий paw-pattern, который не должен мешать чтению evidence и форм.
+
+## QA Cat mascot ☕
+
+Mascot остаётся вторичным элементом интерфейса и не должен мешать тестированию.
+
+Режимы:
+
+- **Выкл**;
+- **Спокойный**;
+- **Активный**.
+
+Micro animations происходят чаще, чем в v0.3.1, но во время активной записи кот становится заметно спокойнее.
+
+Поддерживаются состояния:
+
+- blink;
+- ear / tail / look / paw;
+- wash;
+- stretch;
+- play;
+- walk;
+- редкий litter easter egg в Active mode;
+- **coffee animation ☕**.
+
+Coffee/play/walk/litter не запускаются во время активной записи. `prefers-reduced-motion` учитывается автоматически, с возможностью override в настройках.
 
 ## Privacy first
 
-Recorder работает локально и не отправляет записанные данные на внешний backend.
+Recorder работает local-only.
 
-Основные правила:
-
-- значения из `input` / `textarea` не сохраняются;
-- password values не должны попадать в session data;
-- screenshots создаются только после явного действия пользователя;
-- чувствительные query params маскируются перед сохранением;
-- типовые secret patterns маскируются в console evidence;
-- steps, Network/Console metadata и screenshots хранятся локально в `chrome.storage.local`.
-
-## Browser permissions
-
-Расширение использует Manifest V3 permissions, необходимые для работы recorder-сценария:
-
-- `storage` — локальное состояние сессии и settings;
-- `activeTab` / `tabs` — работа с текущей тестируемой вкладкой;
-- `webRequest` — сбор network metadata;
-- `clipboardWrite` — копирование QA drafts;
-- `<all_urls>` — возможность запускать Recorder на тестируемых web-страницах.
-
-Перед публикацией в Chrome Web Store permissions будут отдельно пересмотрены по принципу minimum required permissions.
-
-## RU-first UX и mascot
-
-Интерфейс v0.3.1 ориентирован на русскоязычного QA. Английские термины сохраняются там, где это стандартная профессиональная терминология: `Bug Report`, `Test Case`, `Checklist`, `Network`, `Console`, `HTTP`, `JSON`, `Markdown`.
-
-В интерфейсе также есть lightweight pixel mascot:
-
-- увеличенный QA-кот с хвостом и усами;
-- несколько animation states;
-- Drag & Drop;
-- сохранение позиции;
-- возможность отключить mascot;
-- reduced-motion mode.
-
-## QA-фокус проекта
-
-Проект используется не только как разработка расширения, но и как QA-практика:
-
-- формализация требований и acceptance criteria;
-- smoke / regression checks recorder flow;
-- проверка privacy-sensitive scenarios;
-- negative testing для network / console evidence;
-- проверка session persistence;
-- проверка reset / rebuild / new session logic;
-- проверка RU-first UX;
-- CI build verification.
-
-Техническая спецификация: [`docs/v0.3-spec.md`](docs/v0.3-spec.md)  
-Статус v0.3.1 и следующий backlog: [`docs/v0.3.1-backlog.md`](docs/v0.3.1-backlog.md)
+- безопасные значения форм могут локально сохраняться в Steps по настройке пользователя;
+- password / OTP / token / API key / PIN / CVV / card-number values автоматически маскируются до отправки шага в background;
+- чувствительные query params маскируются;
+- common secret patterns маскируются в console evidence;
+- screenshots создаются только вручную;
+- данные не отправляются на backend;
+- cloud sync / analytics / AI API в v0.3.2 отсутствуют.
 
 ## Tech stack
 
 - Chrome Extension Manifest V3
-- React
+- Chrome Side Panel API
+- React 19
 - TypeScript
 - Vite
+- Vitest
 - Chrome Storage API
 - Chrome WebRequest API
+- Shadow DOM
 - GitHub Actions
 
 ## Локальная сборка
 
-Требуется Node.js 22+.
-
 ```bash
 npm ci
+npm test
 npm run build
 ```
 
-Готовое unpacked extension будет создано в:
+Готовое unpacked extension находится в:
 
 ```text
 dist/
@@ -141,64 +181,61 @@ dist/
 2. Включить **Developer mode**.
 3. Нажать **Load unpacked**.
 4. Выбрать папку `dist`.
-5. Открыть обычную `http/https` страницу.
-6. Запустить **QA Buddy Recorder**.
+5. Нажать на иконку **QA Cat Recorder** — откроется Side Panel.
+6. Открыть обычную `http/https` страницу и запустить запись.
 
-## Базовый smoke flow
+## Короткий smoke flow
 
 ```text
-Start recording
-→ выполнить тестовый сценарий
-→ проверить записанные steps
-→ сделать screenshot
-→ получить 4xx/5xx или JS error
+Открыть Side Panel
+→ Start recording
+→ проверить Cat Controller
+→ выполнить clicks / navigation / input change
+→ Screenshot
+→ получить 4xx/5xx или Console error
+→ Pause / Resume
 → Stop
-→ проверить evidence
-→ открыть Bug Report / Test Case / Checklist Builder
-→ Copy / Export
-→ New session
+→ проверить Steps / Evidence / Screenshots
+→ Создать Bug Report
+→ проверить Test Case / Checklist
 ```
 
-## Структура проекта
+Перед public release дополнительно проверяются:
 
-```text
-qa-buddy-recorder/
-├── .github/workflows/build.yml
-├── docs/
-│   ├── v0.3-spec.md
-│   └── v0.3.1-backlog.md
-├── public/
-│   └── manifest.json
-├── src/
-│   ├── i18n/
-│   ├── mascot/
-│   ├── popup/
-│   └── scripts/
-├── package.json
-├── package-lock.json
-├── popup.html
-├── tsconfig.json
-├── tsconfig.scripts.json
-└── vite.config.ts
-```
+- закрытие/повторное открытие Side Panel во время session;
+- page reload с активной записью;
+- controller не записывает собственные действия;
+- все 3 темы;
+- mascot Off / Calm / Active;
+- reduced motion;
+- coffee animation вне recording;
+- отсутствие красных ошибок в `chrome://extensions` / service worker console.
 
-## Что ещё в работе
+## QA Buddy ecosystem
 
-Следующие улучшения не заявляются как готовая функциональность:
+[QA Buddy](https://github.com/kitkotcat/qa-buddy) — отдельный QA portfolio project для практики web/API/backend testing и QA documentation.
 
-- step reorder и дополнительные filters;
-- session tags и session history;
-- screenshot-step reassignment;
-- IndexedDB для screenshot blobs;
-- richer network / console metadata;
-- direct handoff recorded session → QA Buddy;
-- Chrome Web Store packaging.
+QA Cat Recorder развивается как самостоятельный companion tool для ручного тестирования и сбора evidence.
 
-## English summary
+## Privacy
 
-**QA Buddy Recorder** is a privacy-first Chrome/Edge extension for manual QA. It records reproduction steps, captures network/console evidence and screenshots, and helps prepare Bug Report, Test Case and Checklist drafts. The current version is **v0.3.1** and is primarily designed for Russian-speaking QA engineers.
+Политика конфиденциальности: [PRIVACY.md](./PRIVACY.md).
 
-## Author
+## License
 
-Katy Peshkun  
-GitHub: [@kitkotcat](https://github.com/kitkotcat)
+MIT — см. [LICENSE](./LICENSE).
+
+## Roadmap после v0.3.2
+
+Не входит в текущий release:
+
+- screenshot annotations;
+- session history / IndexedDB;
+- Jira / YouGile integrations;
+- cloud sync / AI report generation.
+
+---
+
+### English summary
+
+**QA Cat Recorder** is a privacy-first Chrome/Edge extension for manual QA. It keeps a persistent Side Panel next to the tested page, records reproduction steps, collects Network/Console evidence and screenshots, and helps prepare Bug Report, Test Case and Checklist drafts.

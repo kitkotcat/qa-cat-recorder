@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import Mascot from "../mascot/Mascot";
 
 type RecorderStatus = "idle" | "recording" | "paused" | "stopped";
-type TabId = "summary" | "steps" | "network" | "console" | "screenshots" | "settings";
+type TabId = "summary" | "steps" | "network" | "screenshots" | "report" | "settings";
+type EvidenceView = "network" | "console";
 type BuilderMode = "bug" | "testcase" | "checklist";
 type NetworkFilter = "all" | "4xx" | "5xx" | "err" | "slow";
 
@@ -94,16 +95,18 @@ type MascotPosition = {
 };
 
 type RecorderSettings = {
-  locale: "ru" | "en";
-  mascotEnabled: boolean;
-  reducedMotion: boolean;
-  funMode: boolean;
+  theme: "night" | "cafe" | "violet";
+  mascotActivity: "off" | "calm" | "active";
+  controllerPosition: MascotPosition | null;
+  controllerManuallyCollapsed: boolean;
+  captureSafeFieldValues: boolean;
   slowRequestThresholdMs: number;
+  reducedMotionOverride: "system" | "on" | "off";
   mascotPosition: MascotPosition | null;
 };
 
 type RecorderState = {
-  schemaVersion: 3;
+  schemaVersion: 5;
   status: RecorderStatus;
   sessionId: string | null;
   targetTabId: number | null;
@@ -123,7 +126,7 @@ type RecorderState = {
 };
 
 const emptyState: RecorderState = {
-  schemaVersion: 3,
+  schemaVersion: 5,
   status: "idle",
   sessionId: null,
   targetTabId: null,
@@ -169,11 +172,13 @@ const emptyState: RecorderState = {
     items: [],
   },
   settings: {
-    locale: "ru",
-    mascotEnabled: true,
-    reducedMotion: false,
-    funMode: false,
+    theme: "night",
+    mascotActivity: "calm",
+    controllerPosition: null,
+    controllerManuallyCollapsed: false,
+    captureSafeFieldValues: true,
     slowRequestThresholdMs: 2000,
+    reducedMotionOverride: "system",
     mascotPosition: null,
   },
 };
@@ -201,7 +206,12 @@ function normalizeState(raw?: Partial<RecorderState>): RecorderState {
     settings: {
       ...emptyState.settings,
       ...(raw?.settings ?? {}),
-      locale: "ru",
+      theme: raw?.settings?.theme ?? "night",
+      mascotActivity: raw?.settings?.mascotActivity ?? "calm",
+      controllerPosition: raw?.settings?.controllerPosition ?? null,
+      controllerManuallyCollapsed: raw?.settings?.controllerManuallyCollapsed ?? false,
+      captureSafeFieldValues: raw?.settings?.captureSafeFieldValues ?? true,
+      reducedMotionOverride: raw?.settings?.reducedMotionOverride ?? "system",
       mascotPosition: raw?.settings?.mascotPosition ?? null,
     },
   };
@@ -377,7 +387,7 @@ function downloadFile(content: string, filename: string, type: string) {
 
 function QACatLogo() {
   return (
-    <svg viewBox="0 0 120 120" className="qa-logo" aria-label="QA Cat Buddy">
+    <svg viewBox="0 0 120 120" className="qa-logo" aria-label="QA Cat Recorder">
       <circle cx="60" cy="60" r="55" fill="#020617" stroke="#22d3ee" strokeWidth="3" />
       <path d="M30 45L35 18L53 36" fill="#0f172a" stroke="#22d3ee" strokeWidth="3" strokeLinejoin="round" />
       <path d="M90 45L85 18L67 36" fill="#0f172a" stroke="#22d3ee" strokeWidth="3" strokeLinejoin="round" />
@@ -397,6 +407,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>("summary");
   const [builderMode, setBuilderMode] = useState<BuilderMode>("bug");
   const [networkFilter, setNetworkFilter] = useState<NetworkFilter>("all");
+  const [evidenceView, setEvidenceView] = useState<EvidenceView>("network");
   const [now, setNow] = useState(Date.now());
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -428,6 +439,11 @@ export default function App() {
     chrome.storage.onChanged.addListener(listener);
 
     return () => chrome.storage.onChanged.removeListener(listener);
+  }, []);
+
+  useEffect(() => {
+    const panelPort = chrome.runtime.connect({ name: "side-panel-lifecycle" });
+    return () => panelPort.disconnect();
   }, []);
 
   useEffect(() => {
@@ -636,32 +652,24 @@ export default function App() {
     label: string;
     count?: number;
   }> = [
-    { id: "summary", label: "Сводка" },
+    { id: "summary", label: "Сессия" },
     { id: "steps", label: "Шаги", count: state.steps.length },
-    { id: "network", label: "Network", count: state.networkEvents.length },
-    { id: "console", label: "Console", count: state.consoleEvents.length },
+    { id: "network", label: "Evidence", count: state.networkEvents.length + state.consoleEvents.length },
     { id: "screenshots", label: "Скриншоты", count: state.screenshots.length },
-    { id: "settings", label: "Настройки" },
+    { id: "report", label: "Отчёт" },
   ];
 
   return (
-    <main className="popup-shell">
+    <main className="panel-shell" data-theme={state.settings.theme}>
       <header className="brand">
-        <div className="cat-badge">
-          <QACatLogo />
+        <div className="cat-badge"><QACatLogo /></div>
+        <div className="brand-copy"><h1>QA Cat Recorder</h1></div>
+        <div className="header-actions">
+          <span className={`status-pill status-${state.status}`}>{statusLabel}</span>
+          <button className="settings-button" onClick={() => setActiveTab(activeTab === "settings" ? "summary" : "settings")} aria-label="Настройки">
+            {activeTab === "settings" ? "←" : "⚙"}
+          </button>
         </div>
-
-        <div className="brand-copy">
-          <p className="eyebrow">QA CAT BUDDY</p>
-          <h1>Recorder</h1>
-          <small className="product-note">
-            Инструмент для русскоязычных QA
-          </small>
-        </div>
-
-        <span className={`status-pill status-${state.status}`}>
-          {statusLabel}
-        </span>
       </header>
 
       <section className="session-card">
@@ -744,7 +752,7 @@ export default function App() {
       </nav>
 
       <section className="tab-content">
-        {activeTab === "summary" && (
+        {(activeTab === "summary" || activeTab === "report") && (
           <div className="panel">
             {!state.sessionId ? (
               <div className="empty-state">
@@ -778,7 +786,19 @@ export default function App() {
                   <div><span>Locale</span><strong>{state.environment.language || "—"}</strong></div>
                 </div>
 
-                {state.status === "stopped" && (
+                {activeTab === "summary" && state.status === "stopped" && (
+                  <div className="post-stop-actions">
+                    <button className="button button-primary" onClick={() => { setBuilderMode("bug"); setActiveTab("report"); }}>Создать Bug Report</button>
+                    <button className="button button-secondary" onClick={() => { setBuilderMode("testcase"); setActiveTab("report"); }}>Test Case</button>
+                    <button className="button button-secondary" onClick={() => { setBuilderMode("checklist"); setActiveTab("report"); }}>Checklist</button>
+                  </div>
+                )}
+
+                {activeTab === "report" && state.status !== "stopped" && (
+                  <div className="empty-state">Заверши запись, чтобы подготовить QA-артефакт.</div>
+                )}
+
+                {activeTab === "report" && state.status === "stopped" && (
                   <>
                     <div className="builder-switch">
                       <button className={builderMode === "bug" ? "active" : ""} onClick={() => setBuilderMode("bug")}>
@@ -887,7 +907,7 @@ export default function App() {
                           <button className="button button-primary" onClick={() => void copyText(buildBugDraft(state), "Bug Report скопирован")}>
                             Скопировать
                           </button>
-                          <button className="button button-secondary" onClick={() => downloadFile(buildBugDraft(state), `qa-buddy-bug-${state.sessionId}.md`, "text/markdown")}>
+                          <button className="button button-secondary" onClick={() => downloadFile(buildBugDraft(state), `qa-cat-bug-${state.sessionId}.md`, "text/markdown")}>
                             Markdown
                           </button>
                         </div>
@@ -967,7 +987,7 @@ export default function App() {
                           <button className="button button-primary" onClick={() => void copyText(buildTestCaseDraft(state), "Test Case скопирован")}>
                             Скопировать
                           </button>
-                          <button className="button button-secondary" onClick={() => downloadFile(buildTestCaseDraft(state), `qa-buddy-test-case-${state.sessionId}.md`, "text/markdown")}>
+                          <button className="button button-secondary" onClick={() => downloadFile(buildTestCaseDraft(state), `qa-cat-test-case-${state.sessionId}.md`, "text/markdown")}>
                             Markdown
                           </button>
                         </div>
@@ -1041,7 +1061,7 @@ export default function App() {
                           <button className="button button-primary" onClick={() => void copyText(buildChecklistDraft(state), "Checklist скопирован")}>
                             Скопировать
                           </button>
-                          <button className="button button-secondary" onClick={() => downloadFile(buildChecklistDraft(state), `qa-buddy-checklist-${state.sessionId}.md`, "text/markdown")}>
+                          <button className="button button-secondary" onClick={() => downloadFile(buildChecklistDraft(state), `qa-cat-checklist-${state.sessionId}.md`, "text/markdown")}>
                             Markdown
                           </button>
                         </div>
@@ -1051,7 +1071,7 @@ export default function App() {
                     <div className="draft-toolbar">
                       <button onClick={() => void rebuildBuilder()}>↻ Пересобрать draft</button>
                       <button onClick={() => void resetBuilder()}>Сбросить draft</button>
-                      <button onClick={() => downloadFile(JSON.stringify(state, null, 2), `qa-buddy-session-${state.sessionId}.json`, "application/json")}>
+                      <button onClick={() => downloadFile(JSON.stringify(state, null, 2), `qa-cat-session-${state.sessionId}.json`, "application/json")}>
                         Экспорт JSON
                       </button>
                     </div>
@@ -1096,6 +1116,13 @@ export default function App() {
         )}
 
         {activeTab === "network" && (
+          <div className="evidence-switch">
+            <button className={evidenceView === "network" ? "active" : ""} onClick={() => setEvidenceView("network")}>Network <b>{state.networkEvents.length}</b></button>
+            <button className={evidenceView === "console" ? "active" : ""} onClick={() => setEvidenceView("console")}>Console <b>{state.consoleEvents.length}</b></button>
+          </div>
+        )}
+
+        {activeTab === "network" && evidenceView === "network" && (
           <div className="panel">
             <div className="section-heading">
               <h2>Network evidence</h2>
@@ -1144,7 +1171,7 @@ export default function App() {
           </div>
         )}
 
-        {activeTab === "console" && (
+        {activeTab === "network" && evidenceView === "console" && (
           <div className="panel">
             <div className="section-heading">
               <h2>Console evidence</h2>
@@ -1212,8 +1239,37 @@ export default function App() {
           <div className="panel settings-panel">
             <div className="section-heading">
               <h2>Настройки Recorder</h2>
-              <span>v0.3.1</span>
+              <span>v0.3.2</span>
             </div>
+
+            <section className="settings-section theme-settings">
+              <div>
+                <strong>Тема</strong>
+                <small>Выбери спокойный стиль рабочего пространства.</small>
+              </div>
+              <select
+                value={state.settings.theme}
+                onChange={(event) => void updateSetting({ theme: event.target.value as RecorderSettings["theme"] })}
+              >
+                <option value="night">Night QA</option>
+                <option value="cafe">Cat Café</option>
+                <option value="violet">Debug Violet</option>
+              </select>
+            </section>
+
+            <section className="settings-section field-value-settings">
+              <div>
+                <strong>Сохранять безопасные значения</strong>
+                <small>Обычные введённые данные попадут в Steps автоматически. Пароли, токены, OTP и платёжные данные всегда скрываются.</small>
+              </div>
+              <select
+                value={state.settings.captureSafeFieldValues ? "on" : "off"}
+                onChange={(event) => void updateSetting({ captureSafeFieldValues: event.target.value === "on" })}
+              >
+                <option value="on">Вкл</option>
+                <option value="off">Выкл</option>
+              </select>
+            </section>
 
             <section className="settings-section settings-threshold">
               <div>
@@ -1232,60 +1288,49 @@ export default function App() {
               </select>
             </section>
 
-            <section className="settings-options">
-              <label>
-                <input type="checkbox" checked={state.settings.mascotEnabled} onChange={(event) => void updateSetting({ mascotEnabled: event.target.checked })} />
-                <span>
-                  <strong>Показывать pixel-кота</strong>
-                  <small>Можно перетащить мышкой. Double click вернёт позицию.</small>
-                </span>
-              </label>
+            <section className="settings-section mascot-settings">
+              <div>
+                <strong>QA Cat</strong>
+                <small>Активность кота не влияет на запись evidence.</small>
+              </div>
+              <select value={state.settings.mascotActivity} onChange={(event) => void updateSetting({ mascotActivity: event.target.value as RecorderSettings["mascotActivity"] })}>
+                <option value="off">Выкл</option>
+                <option value="calm">Спокойный</option>
+                <option value="active">Активный</option>
+              </select>
+            </section>
 
-              <label>
-                <input type="checkbox" checked={state.settings.reducedMotion} onChange={(event) => void updateSetting({ reducedMotion: event.target.checked })} />
-                <span>
-                  <strong>Уменьшить анимации</strong>
-                  <small>Отключает активные mascot animations.</small>
-                </span>
-              </label>
-
-              <label>
-                <input type="checkbox" checked={state.settings.funMode} disabled={!state.settings.mascotEnabled} onChange={(event) => void updateSetting({ funMode: event.target.checked })} />
-                <span>
-                  <strong>Fun mode</strong>
-                  <small>Добавляет редкую анимацию с лотком.</small>
-                </span>
-              </label>
+            <section className="settings-section motion-settings">
+              <div>
+                <strong>Анимации</strong>
+                <small>По умолчанию учитывается системный reduced motion.</small>
+              </div>
+              <select value={state.settings.reducedMotionOverride} onChange={(event) => void updateSetting({ reducedMotionOverride: event.target.value as RecorderSettings["reducedMotionOverride"] })}>
+                <option value="system">Системные</option>
+                <option value="on">Уменьшить</option>
+                <option value="off">Разрешить</option>
+              </select>
             </section>
 
             <aside className="settings-privacy">
               <strong>Хранение данных</strong>
               <p>
                 Steps, Network/Console metadata и screenshots хранятся локально в chrome.storage.local.
-                Ничего не отправляется на backend.
+                Пароли, токены, OTP и платёжные данные всегда скрываются. Ничего не отправляется на backend.
               </p>
             </aside>
           </div>
         )}
       </section>
 
-      <aside className="privacy-note">
-        <span aria-hidden="true">🛡</span>
-        <p>
-          <strong>Privacy first.</strong> Значения input-полей не записываются.
-          Sensitive query params маскируются. Screenshots создаются только вручную.
-        </p>
-      </aside>
+      <aside className="privacy-note">🛡 Локальное хранение</aside>
 
       <Mascot
-        enabled={state.settings.mascotEnabled}
-        reducedMotion={state.settings.reducedMotion}
-        funMode={state.settings.funMode}
+        activity={state.settings.mascotActivity}
+        reducedMotionOverride={state.settings.reducedMotionOverride}
         recording={state.status === "recording"}
         position={state.settings.mascotPosition}
-        onPositionChange={(mascotPosition) =>
-          void updateSetting({ mascotPosition })
-        }
+        onPositionChange={(mascotPosition) => void updateSetting({ mascotPosition })}
       />
 
       {notice && <p className="notice">{notice}</p>}

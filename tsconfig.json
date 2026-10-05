@@ -17,5 +17,5 @@
     "jsx": "react-jsx",
     "types": ["chrome"]
   },
-  "include": ["src/popup"]
+  "include": ["src/panel", "src/mascot"]
 }

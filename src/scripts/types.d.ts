@@ -1,5 +1,4 @@
 type RecorderStatus = "idle" | "recording" | "paused" | "stopped";
-type RecorderLocale = "ru" | "en";
 type BuilderMode = "bug" | "testcase" | "checklist";
 
 type RecorderStep = {
@@ -89,17 +88,23 @@ type MascotPosition = {
   y: number;
 };
 
+type RecorderTheme = "night" | "cafe" | "violet";
+type MascotActivity = "off" | "calm" | "active";
+type ReducedMotionOverride = "system" | "on" | "off";
+
 type RecorderSettings = {
-  locale: RecorderLocale;
-  mascotEnabled: boolean;
-  reducedMotion: boolean;
-  funMode: boolean;
+  theme: RecorderTheme;
+  mascotActivity: MascotActivity;
+  controllerPosition: MascotPosition | null;
+  controllerManuallyCollapsed: boolean;
+  captureSafeFieldValues: boolean;
   slowRequestThresholdMs: number;
+  reducedMotionOverride: ReducedMotionOverride;
   mascotPosition: MascotPosition | null;
 };
 
 type RecorderState = {
-  schemaVersion: 3;
+  schemaVersion: 5;
   status: RecorderStatus;
   sessionId: string | null;
   targetTabId: number | null;
@@ -117,3 +122,12 @@ type RecorderState = {
   checklist: ChecklistDraft;
   settings: RecorderSettings;
 };
+
+
+type QACatFieldPrivacyApi = {
+  isSensitive(meta: { type?: string; autocomplete?: string; name?: string; id?: string; label?: string }): boolean;
+  buildStep(input: { label: string; kind: "text" | "select" | "checkbox" | "radio"; value?: string; checked?: boolean; captureSafeValues: boolean; sensitive?: boolean }): string;
+  redactSensitiveStepLabel(label: string): string;
+};
+
+declare const QACatFieldPrivacy: QACatFieldPrivacyApi;

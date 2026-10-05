@@ -1,3 +1,8 @@
+import { migrateRecorderState } from "../shared/stateMigration.js";
+import { normalizeControllerPosition } from "../shared/controller.js";
+import { normalizeRecorderTheme } from "../shared/theme.js";
+import { redactSensitiveStepLabel } from "../shared/fieldPrivacy.js";
+
 (() => {
   const STORAGE_KEY = "qaBuddyRecorderState";
   const MAX_STEPS = 500;
@@ -18,11 +23,13 @@
   });
 
   const defaultSettings = (): RecorderSettings => ({
-    locale: "ru",
-    mascotEnabled: true,
-    reducedMotion: false,
-    funMode: false,
+    theme: "night",
+    mascotActivity: "calm",
+    controllerPosition: null,
+    controllerManuallyCollapsed: false,
+    captureSafeFieldValues: true,
     slowRequestThresholdMs: 2000,
+    reducedMotionOverride: "system",
     mascotPosition: null,
   });
 
@@ -54,7 +61,7 @@
   });
 
   const defaultState = (): RecorderState => ({
-    schemaVersion: 3,
+    schemaVersion: 5,
     status: "idle",
     sessionId: null,
     targetTabId: null,
@@ -75,43 +82,16 @@
 
   function normalizeState(raw?: Partial<RecorderState>): RecorderState {
     const base = defaultState();
-
-    return {
+    const merged = {
       ...base,
       ...raw,
-      schemaVersion: 3,
-      steps: (raw?.steps ?? []).map((step) => ({
-        ...step,
-        note: step.note ?? "",
-        important: step.important ?? false,
-      })),
-      networkEvents: raw?.networkEvents ?? [],
-      consoleEvents: raw?.consoleEvents ?? [],
-      screenshots: (raw?.screenshots ?? []).map((item) => ({
-        ...item,
-        attached: item.attached ?? true,
-        stepId: item.stepId ?? null,
-      })),
       environment: { ...base.environment, ...(raw?.environment ?? {}) },
       bugReport: { ...base.bugReport, ...(raw?.bugReport ?? {}) },
-      testCase: {
-        ...base.testCase,
-        ...(raw?.testCase ?? {}),
-        steps: raw?.testCase?.steps ?? [],
-      },
-      checklist: {
-        ...base.checklist,
-        ...(raw?.checklist ?? {}),
-        items: raw?.checklist?.items ?? [],
-      },
-      settings: {
-        ...base.settings,
-        ...(raw?.settings ?? {}),
-        locale: "ru",
-        mascotPosition: raw?.settings?.mascotPosition ?? null,
-      },
-      finishedAt: raw?.finishedAt ?? null,
+      testCase: { ...base.testCase, ...(raw?.testCase ?? {}), steps: raw?.testCase?.steps ?? [] },
+      checklist: { ...base.checklist, ...(raw?.checklist ?? {}), items: raw?.checklist?.items ?? [] },
+      settings: { ...base.settings, ...(raw?.settings ?? {}) },
     };
+    return migrateRecorderState(merged) as RecorderState;
   }
 
   async function loadState(): Promise<RecorderState> {
@@ -291,14 +271,22 @@
     };
   }
 
-  function notifyTarget(state: RecorderState): void {
-    if (state.targetTabId === null) return;
+  function notifyTab(tabId: number | null, state: RecorderState): void {
+    if (tabId === null) return;
 
     chrome.tabs.sendMessage(
-      state.targetTabId,
-      { type: "STATE_UPDATED", state: contentState(state) },
+      tabId,
+      {
+        type: "STATE_UPDATED",
+        state: contentState(state),
+        panelOpen: sidePanelConnections > 0,
+      },
       () => void chrome.runtime.lastError
     );
+  }
+
+  function notifyTarget(state: RecorderState): void {
+    notifyTab(state.targetTabId, state);
   }
 
   async function startRecording(): Promise<RecorderState> {
@@ -320,7 +308,7 @@
       startedAt: now,
       settings: {
         ...previous.settings,
-        locale: "ru",
+        controllerManuallyCollapsed: false,
       },
       environment,
       bugReport: {
@@ -387,15 +375,16 @@
 
   async function newSession(): Promise<RecorderState> {
     const previous = await loadState();
+    const previousTargetTabId = previous.targetTabId;
     const state = defaultState();
 
     state.settings = {
       ...previous.settings,
-      locale: "ru",
+      controllerManuallyCollapsed: false,
     };
 
     await saveState(state);
-    notifyTarget(state);
+    notifyTab(previousTargetTabId, state);
     return state;
   }
 
@@ -418,7 +407,7 @@
 
     const incoming = makeStep(
       message.step.type,
-      message.step.label,
+      message.step.type === "input" ? redactSensitiveStepLabel(message.step.label) : message.step.label,
       message.step.url
     );
 
@@ -615,7 +604,6 @@
     const next = {
       ...state.settings,
       ...(message.settings ?? {}),
-      locale: "ru" as RecorderLocale,
     };
 
     const threshold = Number(next.slowRequestThresholdMs);
@@ -629,6 +617,13 @@
         y: Math.max(0, Math.round(next.mascotPosition.y)),
       };
     }
+
+    next.theme = normalizeRecorderTheme(next.theme);
+    if (!["off", "calm", "active"].includes(next.mascotActivity)) next.mascotActivity = "calm";
+    if (!["system", "on", "off"].includes(next.reducedMotionOverride)) next.reducedMotionOverride = "system";
+    next.controllerPosition = normalizeControllerPosition(next.controllerPosition);
+    next.controllerManuallyCollapsed = Boolean(next.controllerManuallyCollapsed);
+    next.captureSafeFieldValues = next.captureSafeFieldValues !== false;
 
     state.settings = next;
     await saveState(state);
@@ -802,6 +797,16 @@
     { urls: ["<all_urls>"] }
   );
 
+  async function openSidePanel(sender: chrome.runtime.MessageSender): Promise<void> {
+    const tabId = sender.tab?.id;
+    if (!tabId) throw new Error("Не удалось определить вкладку для Side Panel.");
+    await chrome.sidePanel.open({ tabId });
+  }
+
+  async function configureSidePanel(): Promise<void> {
+    await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+  }
+
   async function handleMessage(
     message: {
       type?: string;
@@ -827,6 +832,9 @@
     sender: chrome.runtime.MessageSender
   ) {
     switch (message.type) {
+      case "OPEN_PANEL":
+        await openSidePanel(sender);
+        return { state: await loadState() };
       case "GET_STATE": {
         const state = await loadState();
         return {
@@ -874,8 +882,38 @@
     }
   }
 
+  let sidePanelConnections = 0;
+
+  function notifyPanelVisibility(panelOpen: boolean): void {
+    void loadState().then((state) => {
+      if (!state.sessionId || state.targetTabId === null) return;
+      chrome.tabs.sendMessage(
+        state.targetTabId,
+        { type: "PANEL_VISIBILITY_CHANGED", panelOpen },
+        () => void chrome.runtime.lastError
+      );
+    });
+  }
+
+  chrome.runtime.onConnect.addListener((port) => {
+    if (port.name !== "side-panel-lifecycle") return;
+
+    sidePanelConnections += 1;
+    notifyPanelVisibility(sidePanelConnections > 0);
+
+    port.onDisconnect.addListener(() => {
+      sidePanelConnections = Math.max(0, sidePanelConnections - 1);
+      notifyPanelVisibility(sidePanelConnections > 0);
+    });
+  });
+
   chrome.runtime.onInstalled.addListener(() => {
+    void configureSidePanel();
     void loadState().then((state) => void saveState(state));
+  });
+
+  chrome.runtime.onStartup.addListener(() => {
+    void configureSidePanel();
   });
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
