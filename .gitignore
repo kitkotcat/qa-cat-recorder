@@ -1,4 +1,17 @@
-node_modules
-dist
+node_modules/
+dist/
 .DS_Store
 *.log
+
+# Local environment / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# IDE / editor
+.idea/
+.vscode/

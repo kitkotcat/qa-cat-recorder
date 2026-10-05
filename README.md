@@ -1,48 +1,116 @@
 # QA Buddy Recorder 🐱
 
-[Русский](#русский) · [English](#english)
+**QA Buddy Recorder** — browser extension для ручного QA, которая помогает фиксировать шаги воспроизведения, собирать technical evidence и собирать черновики QA-артефактов во время тестовой сессии.
 
-**QA Buddy Recorder** — browser extension для ручного QA, который записывает шаги воспроизведения, собирает технические evidence и помогает быстро подготовить структурированный bug report.
+Проект ориентирован прежде всего на **русскоязычных QA** и является частью экосистемы [QA Buddy](https://github.com/kitkotcat/qa-buddy).
 
-Репозиторий является частью экосистемы **QA Buddy**.
+## Статус
 
----
+- **Version:** v0.3.1
+- **Status:** active development / portfolio project
+- **Browsers:** Chrome / Edge, Manifest V3
+- **Storage:** local-only, `chrome.storage.local`
+- **CI:** GitHub Actions build
 
-## Русский
+## Что умеет Recorder
 
-### Статус
+### Recording & evidence
 
-**Version:** v0.2.0  
-**Status:** MVP / active development  
-**Browser:** Chrome / Edge, Manifest V3  
-**CI:** GitHub Actions build
+- Start / Pause / Resume / Stop recording session;
+- запись page navigation и пользовательских кликов;
+- фиксация изменений полей без сохранения введённых значений;
+- floating toolbar поверх тестируемой страницы;
+- ручной screenshot текущей вкладки;
+- привязка screenshot к последнему recorded step;
+- автоматический capture HTTP **4xx / 5xx**;
+- capture network errors;
+- capture `console.error`, uncaught exceptions и unhandled promise rejections;
+- отображение request duration и slow requests;
+- итоговая сводка recorded session.
 
-### Что умеет Recorder
+### QA Builders
 
-- Start / Pause / Resume / Stop recording session
-- запись page navigation и пользовательских кликов
-- фиксация изменений полей без сохранения введённых значений
-- floating toolbar поверх тестируемой страницы
-- ручной screenshot текущей вкладки
-- автоматический capture HTTP **4xx / 5xx**
-- автоматический capture network errors
-- capture `console.error`, uncaught exceptions и unhandled promise rejections
-- redaction чувствительных query params и типовых secret patterns
-- итоговый Recorded Session summary
-- Copy bug draft
-- Export session to JSON
-- хранение session state в `chrome.storage.local`
+В v0.3.1 доступны три режима:
 
-### Privacy
+- **Bug Report Builder**;
+- **Test Case Builder**;
+- **Checklist Builder**.
 
-Recorder разработан по принципу **privacy first**:
+Поддерживаются:
 
-- значения из input / textarea не сохраняются;
-- screenshots создаются только после явного нажатия 📸;
+- переключение между builders;
+- редактирование draft;
+- пересборка draft из текущих steps/evidence;
+- сброс только draft без удаления raw evidence;
+- создание новой сессии;
+- Markdown export для QA-артефактов;
+- JSON export recorded session.
+
+### Environment metadata
+
+Recorder автоматически собирает технический контекст сессии:
+
+- URL / domain;
+- browser;
+- OS;
+- viewport;
+- locale.
+
+## Privacy first
+
+Recorder работает локально и не отправляет записанные данные на внешний backend.
+
+Основные правила:
+
+- значения из `input` / `textarea` не сохраняются;
+- password values не должны попадать в session data;
+- screenshots создаются только после явного действия пользователя;
 - чувствительные query params маскируются перед сохранением;
-- common secret patterns маскируются в console evidence.
+- типовые secret patterns маскируются в console evidence;
+- steps, Network/Console metadata и screenshots хранятся локально в `chrome.storage.local`.
 
-### Tech stack
+## Browser permissions
+
+Расширение использует Manifest V3 permissions, необходимые для работы recorder-сценария:
+
+- `storage` — локальное состояние сессии и settings;
+- `activeTab` / `tabs` — работа с текущей тестируемой вкладкой;
+- `webRequest` — сбор network metadata;
+- `clipboardWrite` — копирование QA drafts;
+- `<all_urls>` — возможность запускать Recorder на тестируемых web-страницах.
+
+Перед публикацией в Chrome Web Store permissions будут отдельно пересмотрены по принципу minimum required permissions.
+
+## RU-first UX и mascot
+
+Интерфейс v0.3.1 ориентирован на русскоязычного QA. Английские термины сохраняются там, где это стандартная профессиональная терминология: `Bug Report`, `Test Case`, `Checklist`, `Network`, `Console`, `HTTP`, `JSON`, `Markdown`.
+
+В интерфейсе также есть lightweight pixel mascot:
+
+- увеличенный QA-кот с хвостом и усами;
+- несколько animation states;
+- Drag & Drop;
+- сохранение позиции;
+- возможность отключить mascot;
+- reduced-motion mode.
+
+## QA-фокус проекта
+
+Проект используется не только как разработка расширения, но и как QA-практика:
+
+- формализация требований и acceptance criteria;
+- smoke / regression checks recorder flow;
+- проверка privacy-sensitive scenarios;
+- negative testing для network / console evidence;
+- проверка session persistence;
+- проверка reset / rebuild / new session logic;
+- проверка RU-first UX;
+- CI build verification.
+
+Техническая спецификация: [`docs/v0.3-spec.md`](docs/v0.3-spec.md)  
+Статус v0.3.1 и следующий backlog: [`docs/v0.3.1-backlog.md`](docs/v0.3.1-backlog.md)
+
+## Tech stack
 
 - Chrome Extension Manifest V3
 - React
@@ -52,177 +120,85 @@ Recorder разработан по принципу **privacy first**:
 - Chrome WebRequest API
 - GitHub Actions
 
-### Структура проекта
+## Локальная сборка
 
-```text
-qa-buddy-recorder/
-├── .github/
-│   └── workflows/
-│       └── build.yml
-├── public/
-│   └── manifest.json
-├── src/
-│   ├── popup/
-│   │   ├── App.tsx
-│   │   ├── main.tsx
-│   │   └── styles.css
-│   └── scripts/
-│       ├── background.ts
-│       ├── content.ts
-│       ├── pageBridge.ts
-│       └── types.d.ts
-├── popup.html
-├── package.json
-├── tsconfig.json
-├── tsconfig.scripts.json
-├── vite.config.ts
-└── README.md
-```
-
-### Локальная сборка
+Требуется Node.js 22+.
 
 ```bash
-npm install
+npm ci
 npm run build
 ```
 
-После build готовое unpacked extension находится в:
+Готовое unpacked extension будет создано в:
 
 ```text
 dist/
 ```
 
-### Установка в Chrome
+## Установка в Chrome
 
-1. Открыть `chrome://extensions`
-2. Включить **Developer mode**
-3. Нажать **Load unpacked**
-4. Выбрать папку `dist`
-5. Открыть обычную `http/https` страницу
-6. Запустить **QA Buddy Recorder**
+1. Открыть `chrome://extensions`.
+2. Включить **Developer mode**.
+3. Нажать **Load unpacked**.
+4. Выбрать папку `dist`.
+5. Открыть обычную `http/https` страницу.
+6. Запустить **QA Buddy Recorder**.
 
-### Smoke flow
+## Базовый smoke flow
 
 ```text
 Start recording
 → выполнить тестовый сценарий
-→ сделать screenshot при необходимости
+→ проверить записанные steps
+→ сделать screenshot
 → получить 4xx/5xx или JS error
 → Stop
-→ Copy bug draft / Export JSON
+→ проверить evidence
+→ открыть Bug Report / Test Case / Checklist Builder
+→ Copy / Export
+→ New session
 ```
 
-### Связь с QA Buddy
-
-**QA Buddy** — основное приложение для QA documentation и обучения.  
-**QA Buddy Recorder** — companion browser extension для сбора reproduction steps и technical evidence.
-
-Main project: https://github.com/kitkotcat/qa-buddy
-
-### Roadmap
-
-- screenshots, привязанные к конкретным steps
-- slow request detection
-- расширенная network metadata
-- улучшенный console stack capture
-- editable Actual / Expected result
-- Markdown export
-- direct handoff recorded session → QA Buddy Bug Report
-- Chrome Web Store packaging
-
----
-
-## English
-
-### Status
-
-**Version:** v0.2.0  
-**Status:** MVP / active development  
-**Browser:** Chrome / Edge, Manifest V3  
-**CI:** GitHub Actions build
-
-### What QA Buddy Recorder does
-
-- Start / Pause / Resume / Stop a recording session
-- Capture page navigation and user clicks
-- Track field changes without storing typed values
-- Show a floating toolbar on the tested page
-- Capture a visible-tab screenshot on demand
-- Automatically collect HTTP **4xx / 5xx**
-- Automatically collect network errors
-- Capture `console.error`, uncaught exceptions and unhandled promise rejections
-- Redact sensitive query parameters and common secret patterns
-- Show a Recorded Session summary
-- Copy a structured bug-report draft
-- Export the recorded session to JSON
-- Persist session state in `chrome.storage.local`
-
-### Privacy
-
-The Recorder follows a **privacy-first** approach:
-
-- input and textarea values are not stored;
-- screenshots are created only after an explicit 📸 action;
-- sensitive query parameters are redacted before storage;
-- common secret patterns are redacted from console evidence.
-
-### Tech stack
-
-- Chrome Extension Manifest V3
-- React
-- TypeScript
-- Vite
-- Chrome Storage API
-- Chrome WebRequest API
-- GitHub Actions
-
-### Local build
-
-```bash
-npm install
-npm run build
-```
-
-The unpacked extension is generated in:
+## Структура проекта
 
 ```text
-dist/
+qa-buddy-recorder/
+├── .github/workflows/build.yml
+├── docs/
+│   ├── v0.3-spec.md
+│   └── v0.3.1-backlog.md
+├── public/
+│   └── manifest.json
+├── src/
+│   ├── i18n/
+│   ├── mascot/
+│   ├── popup/
+│   └── scripts/
+├── package.json
+├── package-lock.json
+├── popup.html
+├── tsconfig.json
+├── tsconfig.scripts.json
+└── vite.config.ts
 ```
 
-### Install in Chrome
+## Что ещё в работе
 
-1. Open `chrome://extensions`
-2. Enable **Developer mode**
-3. Click **Load unpacked**
-4. Select the `dist` directory
-5. Open a regular `http/https` page
-6. Start **QA Buddy Recorder**
+Следующие улучшения не заявляются как готовая функциональность:
 
-### Smoke flow
+- step reorder и дополнительные filters;
+- session tags и session history;
+- screenshot-step reassignment;
+- IndexedDB для screenshot blobs;
+- richer network / console metadata;
+- direct handoff recorded session → QA Buddy;
+- Chrome Web Store packaging.
 
-```text
-Start recording
-→ reproduce the scenario
-→ take a screenshot when useful
-→ trigger an HTTP or JavaScript error
-→ Stop
-→ Copy bug draft / Export JSON
-```
+## English summary
 
-### QA Buddy ecosystem
+**QA Buddy Recorder** is a privacy-first Chrome/Edge extension for manual QA. It records reproduction steps, captures network/console evidence and screenshots, and helps prepare Bug Report, Test Case and Checklist drafts. The current version is **v0.3.1** and is primarily designed for Russian-speaking QA engineers.
 
-**QA Buddy** is the main QA documentation and learning app.  
-**QA Buddy Recorder** is its companion browser extension for reproduction steps and technical evidence.
+## Author
 
-Main project: https://github.com/kitkotcat/qa-buddy
-
-### Roadmap
-
-- screenshots linked to individual steps
-- slow-request detection
-- richer network metadata
-- improved console stack capture
-- editable Actual / Expected result
-- Markdown export
-- direct recorded-session handoff to QA Buddy
-- Chrome Web Store packaging
+Katy Peshkun  
+GitHub: [@kitkotcat](https://github.com/kitkotcat)
