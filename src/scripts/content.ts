@@ -1,5 +1,5 @@
 (() => {
-  const HOST_ID = "qa-buddy-recorder-root";
+  const HOST_ID = "qa-cat-recorder-root";
   let state: RecorderState | null = null;
   let host: HTMLDivElement | null = null;
   let shadow: ShadowRoot | null = null;
@@ -78,15 +78,45 @@
       .padStart(2, "0")}`;
   }
 
-  function removeToolbar() {
+  function removeController() {
     host?.remove();
     host = null;
     shadow = null;
   }
 
-  function ensureToolbar() {
+  function persistControllerSettings(settings: Record<string, unknown>) {
+    void chrome.runtime.sendMessage({ type: "UPDATE_SETTINGS", settings });
+  }
+
+  function applyHostPosition() {
+    if (!host || !state) return;
+    const position = state.settings.controllerPosition;
+    if (position) {
+      host.style.left = `${Math.max(8, Math.min(window.innerWidth - 70, position.x))}px`;
+      host.style.top = `${Math.max(8, Math.min(window.innerHeight - 70, position.y))}px`;
+      host.style.right = "auto";
+    } else {
+      host.style.left = "auto";
+      host.style.right = "18px";
+      host.style.top = "18px";
+    }
+  }
+
+  async function captureWithoutController() {
+    if (!host) return chrome.runtime.sendMessage({ type: "CAPTURE_SCREENSHOT" });
+    const previous = host.style.visibility;
+    host.style.visibility = "hidden";
+    try {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      return await chrome.runtime.sendMessage({ type: "CAPTURE_SCREENSHOT" });
+    } finally {
+      host.style.visibility = previous;
+    }
+  }
+
+  function ensureController() {
     if (!active()) {
-      removeToolbar();
+      removeController();
       return;
     }
 
@@ -96,132 +126,115 @@
       host.style.all = "initial";
       host.style.position = "fixed";
       host.style.zIndex = "2147483647";
-      host.style.top = "18px";
-      host.style.right = "18px";
       document.documentElement.appendChild(host);
+      applyHostPosition();
 
       shadow = host.attachShadow({ mode: "open" });
       shadow.innerHTML = `
         <style>
-          * { box-sizing: border-box; }
-          .bar {
-            min-width: 390px;
-            display: grid;
-            grid-template-columns: 40px 1fr auto auto auto;
-            align-items: center;
-            gap: 9px;
-            padding: 10px 11px;
-            border: 1px solid rgba(34, 211, 238, .32);
-            border-radius: 18px;
-            color: #e2e8f0;
-            background: rgba(2, 6, 23, .94);
-            box-shadow: 0 20px 60px rgba(2, 6, 23, .38);
-            backdrop-filter: blur(16px);
-            font: 13px/1.2 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-          }
-          .cat {
-            width: 40px;
-            height: 40px;
-            display: grid;
-            place-items: center;
-            border: 1px solid rgba(34, 211, 238, .45);
-            border-radius: 13px;
-            background: rgba(34, 211, 238, .10);
-            font-size: 21px;
-          }
-          .name { display:block; color:#f8fafc; font-size:13px; font-weight:800; }
-          .meta { display:flex; align-items:center; gap:7px; margin-top:4px; color:#94a3b8; font-size:10px; }
+          * { box-sizing:border-box; }
+          .controller { color:#e2e8f0; font:12px/1.2 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; user-select:none; }
+          .collapsed { display:flex; align-items:center; gap:7px; padding:7px 9px; border:1px solid rgba(34,211,238,.35); border-radius:999px; background:rgba(2,6,23,.95); box-shadow:0 12px 36px rgba(2,6,23,.35); backdrop-filter:blur(14px); }
+          .expanded { width:224px; padding:10px; border:1px solid rgba(34,211,238,.35); border-radius:16px; background:rgba(2,6,23,.96); box-shadow:0 18px 50px rgba(2,6,23,.4); backdrop-filter:blur(16px); }
+          .drag { display:flex; align-items:center; gap:8px; cursor:grab; touch-action:none; }
+          .drag:active { cursor:grabbing; }
+          .cat { display:grid; width:34px; height:34px; place-items:center; border:1px solid rgba(34,211,238,.42); border-radius:11px; background:rgba(34,211,238,.09); font-size:19px; }
           .dot { width:7px; height:7px; border-radius:999px; background:#fb7185; }
           .paused .dot { background:#facc15; }
-          button {
-            width:38px;
-            height:38px;
-            display:grid;
-            place-items:center;
-            cursor:pointer;
-            border:1px solid #334155;
-            border-radius:12px;
-            color:#cbd5e1;
-            background:#0f172a;
-            font:inherit;
-            font-weight:900;
-          }
+          .count { color:#94a3b8; font-weight:800; }
+          .head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+          .name { color:#f8fafc; font-weight:850; }
+          .status { display:flex; align-items:center; gap:5px; color:#94a3b8; font-size:9px; font-weight:800; }
+          .meta { display:flex; justify-content:space-between; margin:9px 0; color:#94a3b8; font-size:10px; }
+          .actions { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
+          button { min-height:34px; cursor:pointer; border:1px solid #334155; border-radius:10px; color:#cbd5e1; background:#0f172a; font:inherit; font-weight:850; }
           button:hover { border-color:#22d3ee; color:#67e8f9; }
+          .open { width:100%; margin-top:7px; color:#67e8f9; background:rgba(34,211,238,.06); }
           .stop:hover { border-color:#fb7185; color:#fca5a5; }
+          .hidden { display:none !important; }
         </style>
-        <div class="bar">
-          <div class="cat" aria-hidden="true">🐱</div>
-          <div>
-            <span class="name">QA Buddy Recorder</span>
-            <span class="meta">
-              <span class="dot"></span>
-              <span data-status>ЗАПИСЬ</span>
-              <span>•</span>
-              <span data-steps>0 шагов</span>
-              <span>•</span>
-              <span data-time>00:00</span>
-            </span>
+        <div class="controller" data-controller>
+          <div class="collapsed hidden" data-collapsed>
+            <div class="drag" data-drag><span class="cat">🐱</span></div>
+            <span class="dot"></span><span class="count" data-compact-count>0</span>
           </div>
-          <button type="button" data-shot aria-label="Сделать скриншот">📸</button>
-          <button type="button" data-pause aria-label="Поставить на паузу">Ⅱ</button>
-          <button type="button" class="stop" data-stop aria-label="Остановить запись">■</button>
+          <div class="expanded" data-expanded>
+            <div class="head">
+              <div class="drag" data-drag><span class="cat">🐱</span><span class="name">QA Cat</span></div>
+              <span class="status"><span class="dot"></span><span data-status>REC</span></span>
+            </div>
+            <div class="meta"><span data-steps>0 шагов</span><span data-time>00:00</span></div>
+            <div class="actions">
+              <button type="button" data-shot aria-label="Сделать скриншот">📸</button>
+              <button type="button" data-pause aria-label="Поставить на паузу">Ⅱ</button>
+              <button type="button" class="stop" data-stop aria-label="Остановить запись">■</button>
+            </div>
+            <button type="button" class="open" data-open>Открыть Recorder →</button>
+          </div>
         </div>
       `;
 
-      shadow.querySelector("[data-shot]")?.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        void chrome.runtime.sendMessage({ type: "CAPTURE_SCREENSHOT" });
+      let dragStart: { x: number; y: number; left: number; top: number; moved: boolean; pointerId: number } | null = null;
+      shadow.querySelectorAll<HTMLElement>("[data-drag]").forEach((handle) => {
+        handle.addEventListener("pointerdown", (event) => {
+          if (!host) return;
+          const rect = host.getBoundingClientRect();
+          dragStart = { x: event.clientX, y: event.clientY, left: rect.left, top: rect.top, moved:false, pointerId:event.pointerId };
+          handle.setPointerCapture(event.pointerId);
+          event.preventDefault();
+          event.stopPropagation();
+        });
+        handle.addEventListener("pointermove", (event) => {
+          if (!host || !dragStart || dragStart.pointerId !== event.pointerId) return;
+          const dx = event.clientX - dragStart.x;
+          const dy = event.clientY - dragStart.y;
+          if (Math.abs(dx) + Math.abs(dy) > 4) dragStart.moved = true;
+          const x = Math.max(8, Math.min(window.innerWidth - host.offsetWidth - 8, dragStart.left + dx));
+          const y = Math.max(8, Math.min(window.innerHeight - host.offsetHeight - 8, dragStart.top + dy));
+          host.style.left = `${x}px`; host.style.top = `${y}px`; host.style.right = "auto";
+        });
+        handle.addEventListener("pointerup", (event) => {
+          if (!host || !dragStart || dragStart.pointerId !== event.pointerId) return;
+          const moved = dragStart.moved;
+          const rect = host.getBoundingClientRect();
+          dragStart = null;
+          if (moved) persistControllerSettings({ controllerPosition: { x: rect.left, y: rect.top } });
+          else persistControllerSettings({ controllerCollapsed: !state?.settings.controllerCollapsed });
+          event.preventDefault(); event.stopPropagation();
+        });
       });
 
-      shadow.querySelector("[data-pause]")?.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        void chrome.runtime.sendMessage({ type: "TOGGLE_PAUSE" });
-      });
-
-      shadow.querySelector("[data-stop]")?.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        void chrome.runtime.sendMessage({ type: "STOP_RECORDING" });
-      });
+      shadow.querySelector("[data-shot]")?.addEventListener("click", (event) => { event.preventDefault(); event.stopPropagation(); void captureWithoutController(); });
+      shadow.querySelector("[data-pause]")?.addEventListener("click", (event) => { event.preventDefault(); event.stopPropagation(); void chrome.runtime.sendMessage({ type:"TOGGLE_PAUSE" }); });
+      shadow.querySelector("[data-stop]")?.addEventListener("click", (event) => { event.preventDefault(); event.stopPropagation(); void chrome.runtime.sendMessage({ type:"STOP_RECORDING" }); });
+      shadow.querySelector("[data-open]")?.addEventListener("click", (event) => { event.preventDefault(); event.stopPropagation(); void chrome.runtime.sendMessage({ type:"OPEN_PANEL" }); });
     }
 
-    updateToolbar();
+    applyHostPosition();
+    updateController();
   }
 
-  function updateToolbar() {
+  function updateController() {
     if (!shadow || !state) return;
-
-    const bar = shadow.querySelector(".bar");
+    const container = shadow.querySelector("[data-controller]");
+    const collapsed = shadow.querySelector("[data-collapsed]");
+    const expanded = shadow.querySelector("[data-expanded]");
     const status = shadow.querySelector("[data-status]");
     const steps = shadow.querySelector("[data-steps]");
+    const compactCount = shadow.querySelector("[data-compact-count]");
     const time = shadow.querySelector("[data-time]");
     const pause = shadow.querySelector("[data-pause]");
 
-    bar?.classList.toggle("paused", state.status === "paused");
-
-    if (status) {
-      status.textContent =
-        state.status === "paused"
-          ? "ПАУЗА"
-          : "ЗАПИСЬ";
-    }
-
-    if (steps) {
-      steps.textContent = `${state.steps.length} шагов`;
-    }
-
+    container?.classList.toggle("paused", state.status === "paused");
+    collapsed?.classList.toggle("hidden", !state.settings.controllerCollapsed);
+    expanded?.classList.toggle("hidden", state.settings.controllerCollapsed);
+    if (status) status.textContent = state.status === "paused" ? "PAUSE" : "REC";
+    if (steps) steps.textContent = `${state.steps.length} шагов`;
+    if (compactCount) compactCount.textContent = String(state.steps.length);
     if (time) time.textContent = formatTime();
-
     if (pause) {
       pause.textContent = state.status === "paused" ? "▶" : "Ⅱ";
-      pause.setAttribute(
-        "aria-label",
-        state.status === "paused"
-          ? "Продолжить запись"
-          : "Поставить на паузу"
-      );
+      pause.setAttribute("aria-label", state.status === "paused" ? "Продолжить запись" : "Поставить на паузу");
     }
   }
 
@@ -303,19 +316,19 @@
     }
 
     if (active()) {
-      updateToolbar();
+      updateController();
     }
   }, 800);
 
   chrome.runtime.onMessage.addListener((message) => {
     if (message?.type !== "STATE_UPDATED") return;
     state = message.state as RecorderState;
-    ensureToolbar();
+    ensureController();
   });
 
   void chrome.runtime.sendMessage({ type: "GET_STATE" }).then((response) => {
     if (!response?.isTargetTab) return;
     state = response.state as RecorderState;
-    ensureToolbar();
+    ensureController();
   });
 })();

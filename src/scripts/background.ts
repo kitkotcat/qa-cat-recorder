@@ -1,4 +1,5 @@
 import { migrateRecorderState } from "../shared/stateMigration.js";
+import { normalizeControllerPosition } from "../shared/controller.js";
 
 (() => {
   const STORAGE_KEY = "qaBuddyRecorderState";
@@ -609,6 +610,9 @@ import { migrateRecorderState } from "../shared/stateMigration.js";
         y: Math.max(0, Math.round(next.mascotPosition.y)),
       };
     }
+
+    next.controllerPosition = normalizeControllerPosition(next.controllerPosition);
+    next.controllerCollapsed = Boolean(next.controllerCollapsed);
 
     state.settings = next;
     await saveState(state);
