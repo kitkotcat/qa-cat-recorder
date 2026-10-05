@@ -4,6 +4,8 @@
   let host: HTMLDivElement | null = null;
   let shadow: ShadowRoot | null = null;
   let lastUrl = location.href;
+  let panelOpen = false;
+  let controllerActionInFlight = false;
 
   function active() {
     return state?.status === "recording" || state?.status === "paused";
@@ -139,7 +141,7 @@
           * { box-sizing:border-box; }
           .controller { color:#e2e8f0; font:12px/1.2 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; user-select:none; }
           .collapsed { display:flex; align-items:center; gap:7px; padding:7px 9px; border:1px solid rgba(34,211,238,.35); border-radius:999px; background:rgba(2,6,23,.95); box-shadow:0 12px 36px rgba(2,6,23,.35); backdrop-filter:blur(14px); }
-          .expanded { width:224px; padding:10px; border:1px solid rgba(34,211,238,.35); border-radius:16px; background:rgba(2,6,23,.96); box-shadow:0 18px 50px rgba(2,6,23,.4); backdrop-filter:blur(16px); }
+          .expanded { width:286px; padding:12px; border:1px solid rgba(34,211,238,.35); border-radius:16px; background:rgba(2,6,23,.96); box-shadow:0 18px 50px rgba(2,6,23,.4); backdrop-filter:blur(16px); }
           .drag { display:flex; align-items:center; gap:8px; cursor:grab; touch-action:none; }
           .drag:active { cursor:grabbing; }
           .cat { display:grid; width:34px; height:34px; place-items:center; border:1px solid rgba(34,211,238,.42); border-radius:11px; background:rgba(34,211,238,.09); font-size:19px; }
@@ -152,6 +154,8 @@
           .status { display:flex; align-items:center; gap:5px; color:#94a3b8; font-size:9px; font-weight:800; }
           .meta { display:flex; justify-content:space-between; margin:9px 0; color:#94a3b8; font-size:10px; }
           .actions { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
+          .collapse { width:28px; min-height:28px; padding:0; border-radius:8px; color:#94a3b8; }
+          .head-tools { display:flex; align-items:center; gap:6px; }
           button { min-height:34px; cursor:pointer; border:1px solid #334155; border-radius:10px; color:#cbd5e1; background:#0f172a; font:inherit; font-weight:850; }
           button:hover { border-color:#22d3ee; color:#67e8f9; }
           .open { width:100%; margin-top:7px; color:#67e8f9; background:rgba(34,211,238,.06); }
@@ -166,15 +170,15 @@
           <div class="expanded" data-expanded>
             <div class="head">
               <div class="drag" data-drag><span class="cat">🐱</span><span class="name">QA Cat</span></div>
-              <span class="status"><span class="dot"></span><span data-status>REC</span></span>
+              <span class="head-tools"><span class="status"><span class="dot"></span><span data-status>REC</span></span><button type="button" class="collapse" data-collapse aria-label="Свернуть контроллер">—</button></span>
             </div>
             <div class="meta"><span data-steps>0 шагов</span><span data-time>00:00</span></div>
             <div class="actions" data-actions>
-              <button type="button" data-shot aria-label="Сделать скриншот">📸</button>
-              <button type="button" data-pause aria-label="Поставить на паузу">Ⅱ</button>
-              <button type="button" class="stop" data-stop aria-label="Остановить запись">■</button>
+              <button type="button" data-shot aria-label="Сделать скриншот">📸 Скрин</button>
+              <button type="button" data-pause aria-label="Поставить на паузу">⏸ Пауза</button>
+              <button type="button" class="stop" data-stop aria-label="Остановить запись">■ Стоп</button>
             </div>
-            <button type="button" class="open" data-open>Открыть Recorder →</button>
+            <button type="button" class="open" data-open>Открыть боковую панель →</button>
           </div>
         </div>
       `;
@@ -204,15 +208,41 @@
           const rect = host.getBoundingClientRect();
           dragStart = null;
           if (moved) persistControllerSettings({ controllerPosition: { x: rect.left, y: rect.top } });
-          else persistControllerSettings({ controllerCollapsed: !state?.settings.controllerCollapsed });
+          else persistControllerSettings({ controllerManuallyCollapsed: !state?.settings.controllerManuallyCollapsed });
           event.preventDefault(); event.stopPropagation();
         });
       });
 
-      shadow.querySelector("[data-shot]")?.addEventListener("click", (event) => { event.preventDefault(); event.stopPropagation(); void captureWithoutController(); });
-      shadow.querySelector("[data-pause]")?.addEventListener("click", (event) => { event.preventDefault(); event.stopPropagation(); void chrome.runtime.sendMessage({ type:"TOGGLE_PAUSE" }); });
-      shadow.querySelector("[data-stop]")?.addEventListener("click", (event) => { event.preventDefault(); event.stopPropagation(); void chrome.runtime.sendMessage({ type:"STOP_RECORDING" }); });
-      shadow.querySelector("[data-open]")?.addEventListener("click", (event) => { event.preventDefault(); event.stopPropagation(); void chrome.runtime.sendMessage({ type:"OPEN_PANEL" }); });
+      async function runControllerAction(action: () => Promise<unknown>) {
+        if (controllerActionInFlight) return;
+        controllerActionInFlight = true;
+        try {
+          await action();
+        } finally {
+          controllerActionInFlight = false;
+        }
+      }
+
+      shadow.querySelector("[data-collapse]")?.addEventListener("click", (event) => {
+        event.preventDefault(); event.stopPropagation();
+        persistControllerSettings({ controllerManuallyCollapsed: true });
+      });
+      shadow.querySelector("[data-shot]")?.addEventListener("click", (event) => {
+        event.preventDefault(); event.stopPropagation();
+        void runControllerAction(() => captureWithoutController());
+      });
+      shadow.querySelector("[data-pause]")?.addEventListener("click", (event) => {
+        event.preventDefault(); event.stopPropagation();
+        void runControllerAction(() => chrome.runtime.sendMessage({ type:"TOGGLE_PAUSE" }));
+      });
+      shadow.querySelector("[data-stop]")?.addEventListener("click", (event) => {
+        event.preventDefault(); event.stopPropagation();
+        void runControllerAction(() => chrome.runtime.sendMessage({ type:"STOP_RECORDING" }));
+      });
+      shadow.querySelector("[data-open]")?.addEventListener("click", (event) => {
+        event.preventDefault(); event.stopPropagation();
+        void runControllerAction(() => chrome.runtime.sendMessage({ type:"OPEN_PANEL" }));
+      });
     }
 
     applyHostPosition();
@@ -233,15 +263,16 @@
 
     container?.classList.toggle("paused", state.status === "paused");
     container?.classList.toggle("stopped", state.status === "stopped");
-    collapsed?.classList.toggle("hidden", !state.settings.controllerCollapsed);
-    expanded?.classList.toggle("hidden", state.settings.controllerCollapsed);
+    const shouldCollapse = panelOpen || state.settings.controllerManuallyCollapsed;
+    collapsed?.classList.toggle("hidden", !shouldCollapse);
+    expanded?.classList.toggle("hidden", shouldCollapse);
     if (status) status.textContent = state.status === "stopped" ? "ГОТОВО" : state.status === "paused" ? "PAUSE" : "REC";
     actions?.classList.toggle("hidden", state.status === "stopped");
     if (steps) steps.textContent = `${state.steps.length} шагов`;
     if (compactCount) compactCount.textContent = String(state.steps.length);
     if (time) time.textContent = formatTime();
     if (pause) {
-      pause.textContent = state.status === "paused" ? "▶" : "Ⅱ";
+      pause.textContent = state.status === "paused" ? "▶ Продолжить" : "⏸ Пауза";
       pause.setAttribute("aria-label", state.status === "paused" ? "Продолжить запись" : "Поставить на паузу");
     }
   }
@@ -329,14 +360,21 @@
   }, 800);
 
   chrome.runtime.onMessage.addListener((message) => {
+    if (message?.type === "PANEL_VISIBILITY_CHANGED") {
+      panelOpen = Boolean(message.panelOpen);
+      updateController();
+      return;
+    }
     if (message?.type !== "STATE_UPDATED") return;
     state = message.state as RecorderState;
+    if (typeof message.panelOpen === "boolean") panelOpen = message.panelOpen;
     ensureController();
   });
 
   void chrome.runtime.sendMessage({ type: "GET_STATE" }).then((response) => {
     if (!response?.isTargetTab) return;
     state = response.state as RecorderState;
+    panelOpen = Boolean(response.panelOpen);
     ensureController();
   });
 })();

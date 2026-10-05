@@ -46,7 +46,7 @@ export function migrateRecorderState(raw: unknown): AnyRecord {
   const settings = asRecord(source.settings);
 
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     status: source.status ?? "idle",
     sessionId: source.sessionId ?? null,
     targetTabId: source.targetTabId ?? null,
@@ -67,7 +67,10 @@ export function migrateRecorderState(raw: unknown): AnyRecord {
       theme: normalizeRecorderTheme(settings.theme),
       mascotActivity: migrateMascotActivity(settings),
       controllerPosition: normalizePosition(settings.controllerPosition ?? settings.mascotPosition),
-      controllerCollapsed: typeof settings.controllerCollapsed === "boolean" ? settings.controllerCollapsed : true,
+      controllerManuallyCollapsed:
+        Number(source.schemaVersion) >= 5 && typeof settings.controllerManuallyCollapsed === "boolean"
+          ? settings.controllerManuallyCollapsed
+          : false,
       slowRequestThresholdMs: clampThreshold(settings.slowRequestThresholdMs),
       reducedMotionOverride: migrateReducedMotion(settings),
     },

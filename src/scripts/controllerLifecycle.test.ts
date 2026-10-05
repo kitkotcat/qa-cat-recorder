@@ -21,11 +21,26 @@ describe("Cat Controller lifecycle", () => {
     expect(background).toContain("notifyTab(previousTargetTabId, state)");
   });
 
-  it("expands the floating controller when the Side Panel closes during a session", () => {
+  it("tracks Side Panel lifecycle without persisting collapse state", () => {
     expect(panel).toContain('chrome.runtime.connect({ name: "side-panel-lifecycle" })');
     expect(background).toContain('port.name !== "side-panel-lifecycle"');
-    expect(background).toContain("setControllerCollapsedFromPanel(true)");
-    expect(background).toContain("setControllerCollapsedFromPanel(false)");
-    expect(background).toContain("port.onDisconnect.addListener");
+    expect(background).toContain('type: "PANEL_VISIBILITY_CHANGED"');
+    expect(background).toContain('panelOpen: sidePanelConnections > 0');
+    expect(background).not.toContain("setControllerCollapsedFromPanel");
+  });
+
+  it("keeps manual collapse separate from panel lifecycle", () => {
+    expect(content).toContain("let panelOpen = false");
+    expect(content).toContain("controllerManuallyCollapsed");
+    expect(content).toContain("panelOpen || state.settings.controllerManuallyCollapsed");
+    expect(background).toContain("controllerManuallyCollapsed: false");
+  });
+
+  it("renders the full active toolbar when expanded", () => {
+    expect(content).toContain("📸 Скрин");
+    expect(content).toContain("⏸ Пауза");
+    expect(content).toContain("■ Стоп");
+    expect(content).toContain("Открыть боковую панель");
+    expect(content).toContain("controllerActionInFlight");
   });
 });

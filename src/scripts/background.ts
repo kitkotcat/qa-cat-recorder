@@ -25,7 +25,7 @@ import { normalizeRecorderTheme } from "../shared/theme.js";
     theme: "night",
     mascotActivity: "calm",
     controllerPosition: null,
-    controllerCollapsed: true,
+    controllerManuallyCollapsed: false,
     slowRequestThresholdMs: 2000,
     reducedMotionOverride: "system",
     mascotPosition: null,
@@ -59,7 +59,7 @@ import { normalizeRecorderTheme } from "../shared/theme.js";
   });
 
   const defaultState = (): RecorderState => ({
-    schemaVersion: 4,
+    schemaVersion: 5,
     status: "idle",
     sessionId: null,
     targetTabId: null,
@@ -274,7 +274,11 @@ import { normalizeRecorderTheme } from "../shared/theme.js";
 
     chrome.tabs.sendMessage(
       tabId,
-      { type: "STATE_UPDATED", state: contentState(state) },
+      {
+        type: "STATE_UPDATED",
+        state: contentState(state),
+        panelOpen: sidePanelConnections > 0,
+      },
       () => void chrome.runtime.lastError
     );
   }
@@ -300,7 +304,10 @@ import { normalizeRecorderTheme } from "../shared/theme.js";
       sessionId: crypto.randomUUID(),
       targetTabId: tab.id,
       startedAt: now,
-      settings: { ...previous.settings },
+      settings: {
+        ...previous.settings,
+        controllerManuallyCollapsed: false,
+      },
       environment,
       bugReport: {
         ...defaultBugReport(),
@@ -369,7 +376,10 @@ import { normalizeRecorderTheme } from "../shared/theme.js";
     const previousTargetTabId = previous.targetTabId;
     const state = defaultState();
 
-    state.settings = { ...previous.settings };
+    state.settings = {
+      ...previous.settings,
+      controllerManuallyCollapsed: false,
+    };
 
     await saveState(state);
     notifyTab(previousTargetTabId, state);
@@ -610,7 +620,7 @@ import { normalizeRecorderTheme } from "../shared/theme.js";
     if (!["off", "calm", "active"].includes(next.mascotActivity)) next.mascotActivity = "calm";
     if (!["system", "on", "off"].includes(next.reducedMotionOverride)) next.reducedMotionOverride = "system";
     next.controllerPosition = normalizeControllerPosition(next.controllerPosition);
-    next.controllerCollapsed = Boolean(next.controllerCollapsed);
+    next.controllerManuallyCollapsed = Boolean(next.controllerManuallyCollapsed);
 
     state.settings = next;
     await saveState(state);
@@ -871,29 +881,26 @@ import { normalizeRecorderTheme } from "../shared/theme.js";
 
   let sidePanelConnections = 0;
 
-  async function setControllerCollapsedFromPanel(controllerCollapsed: boolean): Promise<void> {
-    const state = await loadState();
-    if (!state.sessionId || state.targetTabId === null) return;
-
-    state.settings = {
-      ...state.settings,
-      controllerCollapsed,
-    };
-    await saveState(state);
-    notifyTarget(state);
+  function notifyPanelVisibility(panelOpen: boolean): void {
+    void loadState().then((state) => {
+      if (!state.sessionId || state.targetTabId === null) return;
+      chrome.tabs.sendMessage(
+        state.targetTabId,
+        { type: "PANEL_VISIBILITY_CHANGED", panelOpen },
+        () => void chrome.runtime.lastError
+      );
+    });
   }
 
   chrome.runtime.onConnect.addListener((port) => {
     if (port.name !== "side-panel-lifecycle") return;
 
     sidePanelConnections += 1;
-    void setControllerCollapsedFromPanel(true);
+    notifyPanelVisibility(sidePanelConnections > 0);
 
     port.onDisconnect.addListener(() => {
       sidePanelConnections = Math.max(0, sidePanelConnections - 1);
-      if (sidePanelConnections === 0) {
-        void setControllerCollapsedFromPanel(false);
-      }
+      notifyPanelVisibility(sidePanelConnections > 0);
     });
   });
 

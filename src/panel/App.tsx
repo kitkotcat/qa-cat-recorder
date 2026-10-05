@@ -98,14 +98,14 @@ type RecorderSettings = {
   theme: "night" | "cafe" | "violet";
   mascotActivity: "off" | "calm" | "active";
   controllerPosition: MascotPosition | null;
-  controllerCollapsed: boolean;
+  controllerManuallyCollapsed: boolean;
   slowRequestThresholdMs: number;
   reducedMotionOverride: "system" | "on" | "off";
   mascotPosition: MascotPosition | null;
 };
 
 type RecorderState = {
-  schemaVersion: 4;
+  schemaVersion: 5;
   status: RecorderStatus;
   sessionId: string | null;
   targetTabId: number | null;
@@ -125,7 +125,7 @@ type RecorderState = {
 };
 
 const emptyState: RecorderState = {
-  schemaVersion: 4,
+  schemaVersion: 5,
   status: "idle",
   sessionId: null,
   targetTabId: null,
@@ -174,7 +174,7 @@ const emptyState: RecorderState = {
     theme: "night",
     mascotActivity: "calm",
     controllerPosition: null,
-    controllerCollapsed: true,
+    controllerManuallyCollapsed: false,
     slowRequestThresholdMs: 2000,
     reducedMotionOverride: "system",
     mascotPosition: null,
@@ -207,7 +207,7 @@ function normalizeState(raw?: Partial<RecorderState>): RecorderState {
       theme: raw?.settings?.theme ?? "night",
       mascotActivity: raw?.settings?.mascotActivity ?? "calm",
       controllerPosition: raw?.settings?.controllerPosition ?? null,
-      controllerCollapsed: raw?.settings?.controllerCollapsed ?? true,
+      controllerManuallyCollapsed: raw?.settings?.controllerManuallyCollapsed ?? false,
       reducedMotionOverride: raw?.settings?.reducedMotionOverride ?? "system",
       mascotPosition: raw?.settings?.mascotPosition ?? null,
     },

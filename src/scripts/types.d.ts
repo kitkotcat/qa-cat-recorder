@@ -96,14 +96,14 @@ type RecorderSettings = {
   theme: RecorderTheme;
   mascotActivity: MascotActivity;
   controllerPosition: MascotPosition | null;
-  controllerCollapsed: boolean;
+  controllerManuallyCollapsed: boolean;
   slowRequestThresholdMs: number;
   reducedMotionOverride: ReducedMotionOverride;
   mascotPosition: MascotPosition | null;
 };
 
 type RecorderState = {
-  schemaVersion: 4;
+  schemaVersion: 5;
   status: RecorderStatus;
   sessionId: string | null;
   targetTabId: number | null;

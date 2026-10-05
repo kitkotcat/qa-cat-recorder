@@ -33,11 +33,27 @@ describe("migrateRecorderState", () => {
 
   it("applies v0.3.2 defaults for new settings", () => {
     const result = migrateRecorderState(baseV31);
-    expect(result.schemaVersion).toBe(4);
+    expect(result.schemaVersion).toBe(5);
     expect(result.settings.theme).toBe("night");
-    expect(result.settings.controllerCollapsed).toBe(true);
+    expect(result.settings.controllerManuallyCollapsed).toBe(false);
     expect(result.settings.reducedMotionOverride).toBe("system");
     expect(result.settings.controllerPosition).toEqual({ x: 10, y: 20 });
+  });
+
+  it("preserves only the explicit manual collapse preference", () => {
+    const legacyLifecycleState = migrateRecorderState({
+      ...baseV31,
+      schemaVersion: 4,
+      settings: { ...baseV31.settings, controllerCollapsed: true },
+    });
+    expect(legacyLifecycleState.settings.controllerManuallyCollapsed).toBe(false);
+
+    const manualState = migrateRecorderState({
+      ...baseV31,
+      schemaVersion: 5,
+      settings: { ...baseV31.settings, controllerManuallyCollapsed: true },
+    });
+    expect(manualState.settings.controllerManuallyCollapsed).toBe(true);
   });
 
   it("preserves active session data and drafts", () => {
@@ -65,7 +81,7 @@ describe("migrateRecorderState", () => {
     expect(result.settings.slowRequestThresholdMs).toBe(30000);
   });
 
-  it("is idempotent for schema v4 state", () => {
+  it("is idempotent for schema v5 state", () => {
     const once = migrateRecorderState(baseV31);
     const twice = migrateRecorderState(once);
     expect(twice).toEqual(once);
