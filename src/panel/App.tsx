@@ -1275,30 +1275,28 @@ export default function App() {
               </select>
             </section>
 
-            <section className="settings-options">
-              <label>
-                <input type="checkbox" checked={state.settings.mascotEnabled} onChange={(event) => void updateSetting({ mascotEnabled: event.target.checked })} />
-                <span>
-                  <strong>Показывать pixel-кота</strong>
-                  <small>Можно перетащить мышкой. Double click вернёт позицию.</small>
-                </span>
-              </label>
+            <section className="settings-section mascot-settings">
+              <div>
+                <strong>QA Cat</strong>
+                <small>Активность кота не влияет на запись evidence.</small>
+              </div>
+              <select value={state.settings.mascotActivity} onChange={(event) => void updateSetting({ mascotActivity: event.target.value as RecorderSettings["mascotActivity"] })}>
+                <option value="off">Выкл</option>
+                <option value="calm">Спокойный</option>
+                <option value="active">Активный</option>
+              </select>
+            </section>
 
-              <label>
-                <input type="checkbox" checked={state.settings.reducedMotion} onChange={(event) => void updateSetting({ reducedMotion: event.target.checked })} />
-                <span>
-                  <strong>Уменьшить анимации</strong>
-                  <small>Отключает активные mascot animations.</small>
-                </span>
-              </label>
-
-              <label>
-                <input type="checkbox" checked={state.settings.funMode} disabled={!state.settings.mascotEnabled} onChange={(event) => void updateSetting({ funMode: event.target.checked })} />
-                <span>
-                  <strong>Fun mode</strong>
-                  <small>Добавляет редкую анимацию с лотком.</small>
-                </span>
-              </label>
+            <section className="settings-section motion-settings">
+              <div>
+                <strong>Анимации</strong>
+                <small>По умолчанию учитывается системный reduced motion.</small>
+              </div>
+              <select value={state.settings.reducedMotionOverride} onChange={(event) => void updateSetting({ reducedMotionOverride: event.target.value as RecorderSettings["reducedMotionOverride"] })}>
+                <option value="system">Системные</option>
+                <option value="on">Уменьшить</option>
+                <option value="off">Разрешить</option>
+              </select>
             </section>
 
             <aside className="settings-privacy">
@@ -1315,14 +1313,11 @@ export default function App() {
       <aside className="privacy-note">🛡 Локальное хранение</aside>
 
       <Mascot
-        enabled={state.settings.mascotEnabled}
-        reducedMotion={state.settings.reducedMotion}
-        funMode={state.settings.funMode}
+        activity={state.settings.mascotActivity}
+        reducedMotionOverride={state.settings.reducedMotionOverride}
         recording={state.status === "recording"}
         position={state.settings.mascotPosition}
-        onPositionChange={(mascotPosition) =>
-          void updateSetting({ mascotPosition })
-        }
+        onPositionChange={(mascotPosition) => void updateSetting({ mascotPosition })}
       />
 
       {notice && <p className="notice">{notice}</p>}

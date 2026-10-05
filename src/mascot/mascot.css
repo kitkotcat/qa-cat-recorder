@@ -247,3 +247,38 @@
   70% { transform: translateX(30px) translateY(2px); }
   100% { transform: translateX(30px); }
 }
+
+/* Mascot v3 details */
+.ear-inner { left:3px; top:4px; width:5px; height:5px; background:#f0a6b5; clip-path:polygon(0 100%,50% 0,100% 100%); opacity:.8; }
+.eye b { position:absolute; left:1px; top:0; width:1px; height:1px; background:#f8fafc; }
+.cheek { top:14px; width:4px; height:2px; background:rgba(248,250,252,.28); }
+.cheek-left { left:4px; } .cheek-right { right:4px; }
+.chest { left:7px; bottom:1px; width:10px; height:8px; background:rgba(248,250,252,.72); clip-path:polygon(15% 0,85% 0,100% 100%,0 100%); }
+.collar { left:1px; top:1px; width:22px; height:3px; background:#f59e0b; }
+.qa-tag { left:9px; top:4px; min-width:9px; padding:1px; border-radius:2px; color:#020617; background:#facc15; font:700 4px/1 monospace; text-align:center; }
+.tail-stripe { width:3px; height:5px; top:-4px; background:#0e7490; transform:rotate(12deg); }
+.stripe-one { left:6px; } .stripe-two { left:12px; }
+
+.pixel-coffee { position:absolute; left:75px; bottom:9px; width:22px; height:26px; opacity:0; transform-origin:50% 100%; }
+.pixel-coffee .cup { position:absolute; left:4px; bottom:0; width:14px; height:11px; border:2px solid #f5e6d3; border-radius:1px 1px 4px 4px; background:#9a633f; }
+.pixel-coffee .cup::after { content:""; position:absolute; right:-7px; top:1px; width:6px; height:6px; border:2px solid #f5e6d3; border-left:0; border-radius:0 5px 5px 0; }
+.pixel-coffee .steam { position:absolute; bottom:14px; width:2px; height:7px; background:rgba(248,250,252,.65); }
+.pixel-coffee .steam-one { left:8px; } .pixel-coffee .steam-two { left:13px; height:5px; }
+
+.state-ear .ear-left { animation:mascot-ear 750ms steps(2,end); }
+.state-tail .tail { animation:mascot-tail 550ms steps(2,end) 2; }
+.state-look .eye { animation:mascot-look 1100ms steps(2,end); }
+.state-paw .paw-left { animation:mascot-paw 900ms steps(2,end); }
+.state-stretch .pixel-cat { animation:mascot-stretch 3000ms steps(4,end); }
+.state-coffee .pixel-coffee { opacity:1; animation:mascot-coffee 4600ms steps(6,end); }
+.state-coffee .steam { animation:mascot-steam 900ms steps(3,end) infinite; }
+.state-coffee .paw-right { animation:mascot-coffee-paw 4600ms steps(6,end); }
+
+.reduced .pixel-coffee { animation:none !important; }
+@keyframes mascot-ear { 0%,100%{transform:rotate(0)} 50%{transform:rotate(-18deg)} }
+@keyframes mascot-look { 0%,100%{transform:translateX(0)} 45%,70%{transform:translateX(2px)} }
+@keyframes mascot-paw { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
+@keyframes mascot-stretch { 0%,100%{transform:scaleX(1) translateY(0)} 45%,70%{transform:scaleX(1.12) translateY(3px)} }
+@keyframes mascot-coffee { 0%,12%{transform:translate(0,3px);opacity:0} 20%{opacity:1} 45%,68%{transform:translate(-22px,-15px);opacity:1} 78%{transform:translate(0,0);opacity:1} 100%{opacity:0} }
+@keyframes mascot-coffee-paw { 0%,30%,85%,100%{transform:translate(0,0)} 45%,68%{transform:translate(8px,-9px)} }
+@keyframes mascot-steam { 0%{transform:translateY(2px);opacity:.2} 100%{transform:translateY(-4px);opacity:.8} }
