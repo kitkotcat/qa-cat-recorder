@@ -21,19 +21,11 @@ describe("Cat Controller lifecycle", () => {
     expect(background).toContain("notifyTab(previousTargetTabId, state)");
   });
 
-  it("tracks Side Panel lifecycle without persisting collapse state", () => {
-    expect(panel).toContain('chrome.runtime.connect({ name: "side-panel-lifecycle" })');
-    expect(background).toContain('port.name !== "side-panel-lifecycle"');
-    expect(background).toContain('type: "PANEL_VISIBILITY_CHANGED"');
-    expect(background).toContain('panelOpen: sidePanelConnections > 0');
-    expect(background).not.toContain("setControllerCollapsedFromPanel");
-  });
-
-  it("keeps manual collapse separate from panel lifecycle", () => {
-    expect(content).toContain("let panelOpen = false");
-    expect(content).toContain("controllerManuallyCollapsed");
-    expect(content).toContain("panelOpen || state.settings.controllerManuallyCollapsed");
-    expect(background).toContain("controllerManuallyCollapsed: false");
+  it("keeps the active floating controller expanded regardless of Side Panel visibility", () => {
+    expect(content).not.toContain("data-collapsed");
+    expect(content).not.toContain("data-collapse");
+    expect(content).not.toContain("panelOpen ||");
+    expect(content).toContain('class="expanded" data-expanded');
   });
 
   it("renders the full active toolbar when expanded", () => {

@@ -4,8 +4,11 @@
   let host: HTMLDivElement | null = null;
   let shadow: ShadowRoot | null = null;
   let lastUrl = location.href;
-  let panelOpen = false;
   let controllerActionInFlight = false;
+  const FIELD_CAPTURE_DEBOUNCE_MS = 450;
+  const fieldCaptureTimers = new Map<Element, number>();
+  const dirtyFields = new Set<Element>();
+  const capturedFields = new Set<Element>();
 
   function active() {
     return state?.status === "recording" || state?.status === "paused";
@@ -44,7 +47,66 @@
 
   function fieldTarget(target: EventTarget | null): Element | null {
     if (!(target instanceof Element)) return null;
-    return target.closest("input, textarea, select");
+    return target.closest('input, textarea, select, [contenteditable="true"]');
+  }
+
+  function describeField(element: Element): string {
+    const aria = element.getAttribute("aria-label")?.trim();
+    if (aria) return aria;
+
+    const labelledBy = element.getAttribute("aria-labelledby")?.trim();
+    if (labelledBy) {
+      const text = labelledBy
+        .split(/\s+/)
+        .map((id) => document.getElementById(id)?.textContent?.trim() ?? "")
+        .filter(Boolean)
+        .join(" ");
+      if (text) return text;
+    }
+
+    const id = element.getAttribute("id")?.trim();
+    if (id) {
+      const escapedId = typeof CSS !== "undefined" && CSS.escape ? CSS.escape(id) : id.replace(/["\\]/g, "\\$&");
+      const label = document.querySelector(`label[for="${escapedId}"]`)?.textContent?.trim();
+      if (label) return label;
+    }
+
+    const wrappingLabel = element.closest("label")?.textContent?.replace(/\s+/g, " ").trim();
+    if (wrappingLabel) return wrappingLabel.slice(0, 80);
+
+    return (
+      element.getAttribute("placeholder")?.trim() ||
+      element.getAttribute("name")?.trim() ||
+      id ||
+      element.getAttribute("role")?.trim() ||
+      "поле"
+    );
+  }
+
+  function flushFieldCapture(target: Element) {
+    const timer = fieldCaptureTimers.get(target);
+    if (timer !== undefined) window.clearTimeout(timer);
+    fieldCaptureTimers.delete(target);
+
+    if (!dirtyFields.has(target) || capturedFields.has(target) || state?.status !== "recording") return;
+    capturedFields.add(target);
+    sendStep("input", `Заполнить поле «${describeField(target)}»`);
+  }
+
+  function scheduleFieldCapture(target: Element) {
+    dirtyFields.add(target);
+    const previous = fieldCaptureTimers.get(target);
+    if (previous !== undefined) window.clearTimeout(previous);
+    const timer = window.setTimeout(() => flushFieldCapture(target), FIELD_CAPTURE_DEBOUNCE_MS);
+    fieldCaptureTimers.set(target, timer);
+  }
+
+  function resetFieldCapture(target: Element) {
+    const timer = fieldCaptureTimers.get(target);
+    if (timer !== undefined) window.clearTimeout(timer);
+    fieldCaptureTimers.delete(target);
+    dirtyFields.delete(target);
+    capturedFields.delete(target);
   }
 
   function sendStep(
@@ -140,7 +202,6 @@
         <style>
           * { box-sizing:border-box; }
           .controller { color:#e2e8f0; font:12px/1.2 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; user-select:none; }
-          .collapsed { display:flex; align-items:center; gap:7px; padding:7px 9px; border:1px solid rgba(34,211,238,.35); border-radius:999px; background:rgba(2,6,23,.95); box-shadow:0 12px 36px rgba(2,6,23,.35); backdrop-filter:blur(14px); }
           .expanded { width:286px; padding:12px; border:1px solid rgba(34,211,238,.35); border-radius:16px; background:rgba(2,6,23,.96); box-shadow:0 18px 50px rgba(2,6,23,.4); backdrop-filter:blur(16px); }
           .drag { display:flex; align-items:center; gap:8px; cursor:grab; touch-action:none; }
           .drag:active { cursor:grabbing; }
@@ -148,14 +209,11 @@
           .dot { width:7px; height:7px; border-radius:999px; background:#fb7185; }
           .paused .dot { background:#facc15; }
           .stopped .dot { background:#34d399; }
-          .count { color:#94a3b8; font-weight:800; }
           .head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
           .name { color:#f8fafc; font-weight:850; }
           .status { display:flex; align-items:center; gap:5px; color:#94a3b8; font-size:9px; font-weight:800; }
           .meta { display:flex; justify-content:space-between; margin:9px 0; color:#94a3b8; font-size:10px; }
           .actions { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
-          .collapse { width:28px; min-height:28px; padding:0; border-radius:8px; color:#94a3b8; }
-          .head-tools { display:flex; align-items:center; gap:6px; }
           button { min-height:34px; cursor:pointer; border:1px solid #334155; border-radius:10px; color:#cbd5e1; background:#0f172a; font:inherit; font-weight:850; }
           button:hover { border-color:#22d3ee; color:#67e8f9; }
           .open { width:100%; margin-top:7px; color:#67e8f9; background:rgba(34,211,238,.06); }
@@ -163,14 +221,10 @@
           .hidden { display:none !important; }
         </style>
         <div class="controller" data-controller>
-          <div class="collapsed hidden" data-collapsed>
-            <div class="drag" data-drag><span class="cat">🐱</span></div>
-            <span class="dot"></span><span class="count" data-compact-count>0</span>
-          </div>
           <div class="expanded" data-expanded>
             <div class="head">
               <div class="drag" data-drag><span class="cat">🐱</span><span class="name">QA Cat</span></div>
-              <span class="head-tools"><span class="status"><span class="dot"></span><span data-status>REC</span></span><button type="button" class="collapse" data-collapse aria-label="Свернуть контроллер">—</button></span>
+              <span class="status"><span class="dot"></span><span data-status>REC</span></span>
             </div>
             <div class="meta"><span data-steps>0 шагов</span><span data-time>00:00</span></div>
             <div class="actions" data-actions>
@@ -208,7 +262,6 @@
           const rect = host.getBoundingClientRect();
           dragStart = null;
           if (moved) persistControllerSettings({ controllerPosition: { x: rect.left, y: rect.top } });
-          else persistControllerSettings({ controllerManuallyCollapsed: !state?.settings.controllerManuallyCollapsed });
           event.preventDefault(); event.stopPropagation();
         });
       });
@@ -223,10 +276,6 @@
         }
       }
 
-      shadow.querySelector("[data-collapse]")?.addEventListener("click", (event) => {
-        event.preventDefault(); event.stopPropagation();
-        persistControllerSettings({ controllerManuallyCollapsed: true });
-      });
       shadow.querySelector("[data-shot]")?.addEventListener("click", (event) => {
         event.preventDefault(); event.stopPropagation();
         void runControllerAction(() => captureWithoutController());
@@ -252,24 +301,19 @@
   function updateController() {
     if (!shadow || !state) return;
     const container = shadow.querySelector("[data-controller]");
-    const collapsed = shadow.querySelector("[data-collapsed]");
     const expanded = shadow.querySelector("[data-expanded]");
     const status = shadow.querySelector("[data-status]");
     const steps = shadow.querySelector("[data-steps]");
-    const compactCount = shadow.querySelector("[data-compact-count]");
     const time = shadow.querySelector("[data-time]");
     const pause = shadow.querySelector("[data-pause]");
     const actions = shadow.querySelector("[data-actions]");
 
     container?.classList.toggle("paused", state.status === "paused");
     container?.classList.toggle("stopped", state.status === "stopped");
-    const shouldCollapse = panelOpen || state.settings.controllerManuallyCollapsed;
-    collapsed?.classList.toggle("hidden", !shouldCollapse);
-    expanded?.classList.toggle("hidden", shouldCollapse);
+    expanded?.classList.remove("hidden");
     if (status) status.textContent = state.status === "stopped" ? "ГОТОВО" : state.status === "paused" ? "PAUSE" : "REC";
     actions?.classList.toggle("hidden", state.status === "stopped");
     if (steps) steps.textContent = `${state.steps.length} шагов`;
-    if (compactCount) compactCount.textContent = String(state.steps.length);
     if (time) time.textContent = formatTime();
     if (pause) {
       pause.textContent = state.status === "paused" ? "▶ Продолжить" : "⏸ Пауза";
@@ -292,22 +336,37 @@
   );
 
   document.addEventListener(
+    "input",
+    (event) => {
+      if (state?.status !== "recording") return;
+      if (host && event.composedPath().includes(host)) return;
+      const target = fieldTarget(event.target);
+      if (!target) return;
+      scheduleFieldCapture(target);
+    },
+    true
+  );
+
+  document.addEventListener(
     "change",
     (event) => {
       if (state?.status !== "recording") return;
-
+      if (host && event.composedPath().includes(host)) return;
       const target = fieldTarget(event.target);
       if (!target) return;
+      dirtyFields.add(target);
+      flushFieldCapture(target);
+    },
+    true
+  );
 
-      const fieldType =
-        target instanceof HTMLInputElement && target.type
-          ? ` (${target.type})`
-          : "";
-
-      sendStep(
-        "input",
-        `Изменить поле «${describeElement(target)}»${fieldType}`
-      );
+  document.addEventListener(
+    "focusout",
+    (event) => {
+      const target = fieldTarget(event.target);
+      if (!target) return;
+      flushFieldCapture(target);
+      resetFieldCapture(target);
     },
     true
   );
@@ -360,21 +419,14 @@
   }, 800);
 
   chrome.runtime.onMessage.addListener((message) => {
-    if (message?.type === "PANEL_VISIBILITY_CHANGED") {
-      panelOpen = Boolean(message.panelOpen);
-      updateController();
-      return;
-    }
     if (message?.type !== "STATE_UPDATED") return;
     state = message.state as RecorderState;
-    if (typeof message.panelOpen === "boolean") panelOpen = message.panelOpen;
     ensureController();
   });
 
   void chrome.runtime.sendMessage({ type: "GET_STATE" }).then((response) => {
     if (!response?.isTargetTab) return;
     state = response.state as RecorderState;
-    panelOpen = Boolean(response.panelOpen);
     ensureController();
   });
 })();
