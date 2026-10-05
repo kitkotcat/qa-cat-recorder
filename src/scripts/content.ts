@@ -9,6 +9,10 @@
     return state?.status === "recording" || state?.status === "paused";
   }
 
+  function shouldShowController() {
+    return Boolean(state?.sessionId) && (active() || state?.status === "stopped");
+  }
+
   function describeElement(element: Element): string {
     const aria = element.getAttribute("aria-label")?.trim();
     const title = element.getAttribute("title")?.trim();
@@ -115,7 +119,7 @@
   }
 
   function ensureController() {
-    if (!active()) {
+    if (!shouldShowController()) {
       removeController();
       return;
     }
@@ -141,6 +145,7 @@
           .cat { display:grid; width:34px; height:34px; place-items:center; border:1px solid rgba(34,211,238,.42); border-radius:11px; background:rgba(34,211,238,.09); font-size:19px; }
           .dot { width:7px; height:7px; border-radius:999px; background:#fb7185; }
           .paused .dot { background:#facc15; }
+          .stopped .dot { background:#34d399; }
           .count { color:#94a3b8; font-weight:800; }
           .head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
           .name { color:#f8fafc; font-weight:850; }
@@ -164,7 +169,7 @@
               <span class="status"><span class="dot"></span><span data-status>REC</span></span>
             </div>
             <div class="meta"><span data-steps>0 шагов</span><span data-time>00:00</span></div>
-            <div class="actions">
+            <div class="actions" data-actions>
               <button type="button" data-shot aria-label="Сделать скриншот">📸</button>
               <button type="button" data-pause aria-label="Поставить на паузу">Ⅱ</button>
               <button type="button" class="stop" data-stop aria-label="Остановить запись">■</button>
@@ -224,11 +229,14 @@
     const compactCount = shadow.querySelector("[data-compact-count]");
     const time = shadow.querySelector("[data-time]");
     const pause = shadow.querySelector("[data-pause]");
+    const actions = shadow.querySelector("[data-actions]");
 
     container?.classList.toggle("paused", state.status === "paused");
+    container?.classList.toggle("stopped", state.status === "stopped");
     collapsed?.classList.toggle("hidden", !state.settings.controllerCollapsed);
     expanded?.classList.toggle("hidden", state.settings.controllerCollapsed);
-    if (status) status.textContent = state.status === "paused" ? "PAUSE" : "REC";
+    if (status) status.textContent = state.status === "stopped" ? "ГОТОВО" : state.status === "paused" ? "PAUSE" : "REC";
+    actions?.classList.toggle("hidden", state.status === "stopped");
     if (steps) steps.textContent = `${state.steps.length} шагов`;
     if (compactCount) compactCount.textContent = String(state.steps.length);
     if (time) time.textContent = formatTime();
@@ -315,7 +323,7 @@
       }
     }
 
-    if (active()) {
+    if (shouldShowController()) {
       updateController();
     }
   }, 800);

@@ -19,4 +19,10 @@ describe("Side Panel theme CSS", () => {
   it("does not hardcode the old navy translucent panel background", () => {
     expect(css).not.toContain("rgba(2, 6, 23, .72)");
   });
+
+  it("keeps long checklist items inside the Side Panel viewport", () => {
+    expect(css).toContain("overflow-x:hidden");
+    expect(css).toContain("overflow-wrap:anywhere");
+    expect(css).toMatch(/\.checklist-item[^}]*min-width:\s*0/s);
+  });
 });

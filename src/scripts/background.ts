@@ -269,14 +269,18 @@ import { normalizeRecorderTheme } from "../shared/theme.js";
     };
   }
 
-  function notifyTarget(state: RecorderState): void {
-    if (state.targetTabId === null) return;
+  function notifyTab(tabId: number | null, state: RecorderState): void {
+    if (tabId === null) return;
 
     chrome.tabs.sendMessage(
-      state.targetTabId,
+      tabId,
       { type: "STATE_UPDATED", state: contentState(state) },
       () => void chrome.runtime.lastError
     );
+  }
+
+  function notifyTarget(state: RecorderState): void {
+    notifyTab(state.targetTabId, state);
   }
 
   async function startRecording(): Promise<RecorderState> {
@@ -362,12 +366,13 @@ import { normalizeRecorderTheme } from "../shared/theme.js";
 
   async function newSession(): Promise<RecorderState> {
     const previous = await loadState();
+    const previousTargetTabId = previous.targetTabId;
     const state = defaultState();
 
     state.settings = { ...previous.settings };
 
     await saveState(state);
-    notifyTarget(state);
+    notifyTab(previousTargetTabId, state);
     return state;
   }
 
