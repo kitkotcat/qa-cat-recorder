@@ -1,5 +1,6 @@
 import { migrateRecorderState } from "../shared/stateMigration.js";
 import { normalizeControllerPosition } from "../shared/controller.js";
+import { normalizeRecorderTheme } from "../shared/theme.js";
 
 (() => {
   const STORAGE_KEY = "qaBuddyRecorderState";
@@ -611,6 +612,7 @@ import { normalizeControllerPosition } from "../shared/controller.js";
       };
     }
 
+    next.theme = normalizeRecorderTheme(next.theme);
     next.controllerPosition = normalizeControllerPosition(next.controllerPosition);
     next.controllerCollapsed = Boolean(next.controllerCollapsed);
 

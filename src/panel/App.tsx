@@ -661,7 +661,7 @@ export default function App() {
   ];
 
   return (
-    <main className="panel-shell">
+    <main className="panel-shell" data-theme={state.settings.theme}>
       <header className="brand">
         <div className="cat-badge"><QACatLogo /></div>
         <div className="brand-copy"><h1>QA Cat Recorder</h1></div>
@@ -1242,6 +1242,21 @@ export default function App() {
               <h2>Настройки Recorder</h2>
               <span>v0.3.2</span>
             </div>
+
+            <section className="settings-section theme-settings">
+              <div>
+                <strong>Тема</strong>
+                <small>Выбери спокойный стиль рабочего пространства.</small>
+              </div>
+              <select
+                value={state.settings.theme}
+                onChange={(event) => void updateSetting({ theme: event.target.value as RecorderSettings["theme"] })}
+              >
+                <option value="night">Night QA</option>
+                <option value="cafe">Cat Café</option>
+                <option value="violet">Debug Violet</option>
+              </select>
+            </section>
 
             <section className="settings-section settings-threshold">
               <div>
