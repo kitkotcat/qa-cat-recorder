@@ -58,8 +58,14 @@ export default function Mascot({
   }, []);
 
   useEffect(() => {
+    if (endTimer.current !== null) {
+      window.clearTimeout(endTimer.current);
+      endTimer.current = null;
+    }
+    stateRef.current = "idle";
+    setState("idle");
+
     if (activity === "off" || reducedMotion) {
-      setState("idle");
       return;
     }
 
